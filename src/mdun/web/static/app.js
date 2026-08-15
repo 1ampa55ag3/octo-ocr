@@ -572,12 +572,14 @@ function drawFocusBox() {
   var p = current && current.pages[pageIdx];
   var w = (p && p.width) || r.width, h = (p && p.height) || r.height;
   var b = focusData.box;
+  var fx0 = Math.max(0, Math.min(1, b[0] / w)), fy0 = Math.max(0, Math.min(1, b[1] / h));
+  var fx1 = Math.max(fx0, Math.min(1, b[2] / w)), fy1 = Math.max(fy0, Math.min(1, b[3] / h));
   var div = document.createElement("div");
   div.className = "focus-box";
-  div.style.left = (b[0] / w * r.width) + "px";
-  div.style.top = (b[1] / h * r.height) + "px";
-  div.style.width = ((b[2] - b[0]) / w * r.width) + "px";
-  div.style.height = ((b[3] - b[1]) / h * r.height) + "px";
+  div.style.left = (fx0 * r.width) + "px";
+  div.style.top = (fy0 * r.height) + "px";
+  div.style.width = ((fx1 - fx0) * r.width) + "px";
+  div.style.height = ((fy1 - fy0) * r.height) + "px";
   annotWrapEl.appendChild(div);
 }
 var sealLayerOn = true;
@@ -596,12 +598,14 @@ function renderSealBoxes() {
   var w = p.width || r.width, h = p.height || r.height;
   p.seals.forEach(function (s) {
     var b = s.box;
+    var sx0 = Math.max(0, Math.min(1, b[0] / w)), sy0 = Math.max(0, Math.min(1, b[1] / h));
+    var sx1 = Math.max(sx0, Math.min(1, b[2] / w)), sy1 = Math.max(sy0, Math.min(1, b[3] / h));
     var div = document.createElement("div");
     div.className = "seal-box";
-    div.style.left = (b[0] / w * r.width) + "px";
-    div.style.top = (b[1] / h * r.height) + "px";
-    div.style.width = ((b[2] - b[0]) / w * r.width) + "px";
-    div.style.height = ((b[3] - b[1]) / h * r.height) + "px";
+    div.style.left = (sx0 * r.width) + "px";
+    div.style.top = (sy0 * r.height) + "px";
+    div.style.width = ((sx1 - sx0) * r.width) + "px";
+    div.style.height = ((sy1 - sy0) * r.height) + "px";
     var lab = document.createElement("span");
     lab.className = "seal-label";
     lab.textContent = "印章";
@@ -609,6 +613,34 @@ function renderSealBoxes() {
     annotWrapEl.appendChild(div);
   });
 }
+// 图文对照：点击预览图 → 定位右侧文字（选中 + 黄色高亮闪烁）
+function handleLinkLayerClick(e) {
+  if (!current || !annotWrapEl) return;
+  var p = current.pages[pageIdx];
+  if (p.kind === "text") { showToast("该页为电子文字层，无位置坐标"); return; }
+  var r = annotWrapEl.getBoundingClientRect();
+  var nx = (e.clientX - r.left) / r.width;
+  var ny = (e.clientY - r.top) / r.height;
+  var w = p.width || r.width, h = p.height || r.height;
+  var px = nx * w, py = ny * h;
+  var hit = null;
+  (p.paras || []).forEach(function (para) {
+    var bx = para.box || [0, 0, 0, 0];
+    if (!hit && bx[0] <= px && px <= bx[2] && bx[1] <= py && py <= bx[3] && para.text.trim()) hit = para;
+  });
+  if (!hit) { showToast("该位置没有可对应的文字"); return; }
+  var bounds = pageTextBounds();
+  var pos = quill.getText().indexOf(hit.text.trim(), bounds[pageIdx]);
+  if (pos < 0 || pos >= bounds[pageIdx + 1]) { showToast("该段已被编辑，未找到对应文字"); return; }
+  var len = hit.text.trim().length;
+  quill.setSelection(pos, len, "silent");
+  quill.formatText(pos, len, "lowconf", true, "silent");
+  setTimeout(function () {
+    quill.formatText(pos, len, "lowconf", false, "silent");
+  }, 2500);
+  showToast("已定位到右侧文字（第 " + (pageIdx + 1) + " 页）", "ok");
+}
+
 function jumpToPageBox(pageIdx, box, label) {
   if (!current || pageIdx >= current.pages.length) return;
   focusData = { page: pageIdx, box: box };
@@ -666,7 +698,8 @@ $("btnLink").onclick = function () {
   linkMode = !linkMode;
   $("btnLink").classList.toggle("active", linkMode);
   $("editorBox").classList.toggle("link-mode", linkMode);
-  showToast(linkMode ? "图文对照已开启：鼠标移到段落会有提示框，点击定位到原文" : "图文对照已关闭");
+  if (linkLayerEl) linkLayerEl.classList.toggle("hidden", annotMode);
+  showToast(linkMode ? "图文对照已开启：点击预览图上的文字，右侧自动定位" : "图文对照已关闭");
 };
 
 // ---- 页面联动 ----
@@ -1437,8 +1470,13 @@ function renderPage() {
   var layer = document.createElement("div");
   layer.className = "annot-layer" + (annotMode ? "" : " hidden");
   wrap.appendChild(layer);
+  var linkLayer = document.createElement("div");
+  linkLayer.className = "link-layer" + ((linkMode && !annotMode) ? "" : " hidden");
+  wrap.appendChild(linkLayer);
+  linkLayer.onclick = handleLinkLayerClick;
   annotLayerEl = layer;
   annotWrapEl = wrap;
+  linkLayerEl = linkLayer;
   $("imageBox").innerHTML = "";
   $("imageBox").appendChild(wrap);
   initAnnotBoxes();
@@ -1452,7 +1490,7 @@ function renderPage() {
   };
   if (img.complete && img.naturalWidth) { applyZoom(); renderAnnotBoxes(); drawFocusBox(); renderSealBoxes(); }
 }
-var annotLayerEl = null, annotWrapEl = null;
+var annotLayerEl = null, annotWrapEl = null, linkLayerEl = null;
 // ---- 预览页防截图水印：口号 + 时间戳 + 页码，平铺斜纹覆盖整页 ----
 function buildWatermarkSvg(pageNum) {
   var d = new Date();

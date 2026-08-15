@@ -247,6 +247,7 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 .img-wrap { position: relative; display: inline-block; line-height: 0; }
 .wm-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .annot-layer { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
+.link-layer { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
 .anno-box { position: absolute; border: 2px dashed var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); pointer-events: none; z-index: 3; }
 .anno-box.fixed { background: color-mix(in srgb, var(--danger) 18%, transparent); }
 .anno-box.deletable { pointer-events: auto; cursor: pointer; }

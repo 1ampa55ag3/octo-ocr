@@ -139,7 +139,14 @@ class Pipeline:
 
     @staticmethod
     def _remove_seals(img):
-        """红色圆形印章检测：检出的印章区域涂白，OCR 不再读取（红头文字条状、低圆度，不受影响）。"""
+        """红色圆形印章检测：检出的印章区域涂白，OCR 不再读取。
+
+        策略（基于真实证书样本标定）：
+        1. 连通域筛选：两档闭运算（9×9 与 15×15×2）分别取轮廓、去重；
+           圆度≥0.55 + 椭圆拟合比≥0.85 + 近方形 + 红填充 0.25~0.85 + 盘内红色连通块≥8；
+           小尺寸（<150px）要求填充≥0.45（排除证书花边装饰圆）；
+        2. 霍夫圆兜底（仅当零命中，印章与红框相连时）：圆内红填充≥0.25 且盘内连通块≥8，取前 2。
+        """
         import cv2
 
         img = np.array(img, copy=True)  # PIL asarray 为只读视图，需可写副本
@@ -148,30 +155,85 @@ class Pipeline:
         r = img[..., 0].astype(int)
         g = img[..., 1].astype(int)
         b = img[..., 2].astype(int)
-        red = ((r - np.maximum(g, b)) > 40) & (r > 100)
+        red = ((r - np.maximum(g, b)) > 25) & (r > 80)
         mask = (red.astype(np.uint8)) * 255
         if int(mask.sum()) == 0:
             return img, []
-        # 大核闭运算：把章环与环内文字连成整体，环形公章也能检出
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8), iterations=2)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        seals = []
-        for c in contours:
-            x, y, cw, ch = cv2.boundingRect(c)
-            area = float(cv2.contourArea(c))
-            if not (200 <= area <= 500_000):
-                continue
-            if cw < 16 or ch < 16:
-                continue
-            if max(cw, ch) / max(1, min(cw, ch)) > 2.0:   # 条状红字（红头标题/文号）排除
-                continue
-            per = cv2.arcLength(c, True)
-            circ = 4 * 3.14159 * area / max(1.0, per * per)   # 圆度
-            fill = float(cv2.countNonZero(mask[y:y + ch, x:x + cw])) / max(1.0, float(cw * ch))
-            if circ < 0.35 or fill < 0.15:
-                continue
-            seals.append({"box": [int(x), int(y), int(x + cw), int(y + ch)], "conf": round(min(1.0, circ), 3)})
-            img[y:y + ch, x:x + cw] = 255
+        seals: list = []
+        boxes: list = []
+
+        def inside_count(x, y, x1, y1):
+            n, labels, stats, cents = cv2.connectedComponentsWithStats(mask, 8)
+            return sum(1 for (cx0, cy0) in cents[1:] if x <= cx0 <= x1 and y <= cy0 <= y1)
+
+        def overlap(a, b):
+            ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+            iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+            inter = ix * iy
+            return inter > 0.25 * min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+
+        def accept(box, conf):
+            if any(overlap(box, b) for b in boxes):
+                return
+            boxes.append(box)
+            seals.append({"box": [int(v) for v in box], "conf": round(float(conf), 3)})
+            img[box[1]:box[3], box[0]:box[2]] = 255
+
+        closes = (
+            cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8), iterations=1),
+            cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8), iterations=2),
+        )
+        for m1 in closes:
+            contours, _ = cv2.findContours(m1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                x, y, cw, ch = cv2.boundingRect(c)
+                area = float(cv2.contourArea(c))
+                if not (800 <= area <= 250_000) or cw < 30 or ch < 30:
+                    continue
+                if max(cw, ch) / max(1, min(cw, ch)) > 1.35:   # 椭圆花边/绶带排除，圆形章近方
+                    continue
+                per = cv2.arcLength(c, True)
+                circ = 4 * 3.14159 * area / max(1.0, per * per)
+                if circ < 0.50:
+                    continue
+                fill = float(cv2.countNonZero(mask[y:y + ch, x:x + cw])) / max(1.0, float(cw * ch))
+                if fill < 0.20 or fill > 0.85:
+                    continue
+                ell_ratio = 1.0
+                if len(c) >= 5:
+                    try:
+                        ell = cv2.fitEllipse(c)
+                        ea = 3.14159 * ell[1][0] * ell[1][1] / 4
+                        ell_ratio = area / max(1.0, ea)
+                    except Exception:  # noqa: BLE001
+                        pass
+                if ell_ratio < 0.82:
+                    continue
+                if inside_count(x, y, x + cw, y + ch) < 8:
+                    continue
+                if min(cw, ch) < 150 and fill < 0.45:
+                    continue
+                accept((x, y, x + cw, y + ch), min(1.0, circ))
+        # 霍夫圆兜底（仅当零命中；印章与红框相连被合并时）
+        if not seals:
+            edges = cv2.Canny(mask, 50, 150)
+            circles = cv2.HoughCircles(edges, cv2.HOUGH_GRADIENT, dp=1.5, minDist=200,
+                                       param1=120, param2=40, minRadius=40, maxRadius=260)
+            if circles is not None:
+                cands = []
+                for cx, cy, cr in circles[0]:
+                    x0, y0, x1, y1 = int(cx - cr), int(cy - cr), int(cx + cr), int(cy + cr)
+                    if x0 < 0 or y0 < 0 or x1 >= w or y1 >= h:
+                        continue
+                    fill = float(cv2.countNonZero(mask[y0:y1, x0:x1])) / max(1.0, float(4 * cr * cr))
+                    if fill < 0.25:
+                        continue
+                    if inside_count(x0, y0, x1, y1) < 8:
+                        continue
+                    cands.append((fill, (x0, y0, x1, y1)))
+                cands.sort(reverse=True)
+                for fill, box in cands[:2]:
+                    accept(box, 0.4 + fill)
         return img, seals
 
     def _process_page(self, pin) -> PageData:

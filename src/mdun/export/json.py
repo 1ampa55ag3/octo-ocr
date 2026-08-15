@@ -16,6 +16,8 @@ def project_to_dict(project: Project) -> dict:
             {
                 "index": p.index,
                 "kind": p.kind,
+                "width": p.width,
+                "height": p.height,
                 "text": p.text,
                 "conf_avg": round(p.conf_avg, 4),
                 "seconds": round(p.seconds, 3),
