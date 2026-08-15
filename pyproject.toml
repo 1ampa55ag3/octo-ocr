@@ -1,6 +1,6 @@
 [project]
 name = "mdun"
-version = "0.21.0"
+version = "0.23.0"
 description = "OctoOCR-offline —— 完全离线的 OCR 与文档文字修复工作站"
 readme = "README.md"
 requires-python = ">=3.10"
