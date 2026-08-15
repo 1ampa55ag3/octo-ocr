@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OctoOCR-offline · 离线校对工作台</title>
+<link rel="icon" type="image/png" sizes="256x256" href="/static/logo.png">
+<link rel="icon" type="image/png" sizes="128x128" href="/static/favicon-128.png">
+<link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+<link rel="stylesheet" href="/static/vendor/quill.snow.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><img class="logo" src="/static/logo.png" alt="OctoOCR-offline"> OctoOCR-offline <span class="ver">v0.21.0</span> <span class="slogan">涉密不上网 · 上网不涉密</span></div>
+  <div class="mid" id="jobBox">
+    <div id="jobStatus" class="job-status hidden"></div>
+    <div class="progress hidden" id="progressBar"><div id="progressFill"></div></div>
+  </div>
+  <div class="actions" style="display:flex;align-items:center;gap:8px;">
+    <button id="btnTheme" class="btn icon" title="切换明暗模式"><span class="icn" data-icon="moon"></span></button>
+  </div>
+</header>
+<main id="mainRow">
+  <button id="btnExpandSide" class="side-tab hidden" title="展开任务栏"><span class="icn" data-icon="chevrons-right"></span></button>
+  <aside id="projectList">
+    <div class="side-head">
+      <span class="side-title">任务</span>
+      <button id="btnCollapseSide" class="collapse-btn" title="收纳/展开任务栏"><span class="icn" data-icon="chevrons-left"></span></button>
+    </div>
+    <label class="btn primary import-btn"><span class="icn" data-icon="upload"></span> 导入文件（PDF/图片）
+      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" hidden>
+    </label>
+    <div id="projects"></div>
+    <div class="hint" id="emptyHint">拖拽文件到窗口 / 粘贴 (⌘V)</div>
+    <div class="side-foot">
+      <button id="btnLicenses" class="lic-btn" title="查看使用的开源项目与许可协议">开源许可</button>
+    </div>
+  </aside>
+  <div id="splitA" class="splitter" title="拖拽调整宽度"></div>
+  <button id="btnExpand" class="viewer-tab hidden" title="展开预览栏"><span class="icn" data-icon="chevrons-right"></span></button>
+  <section id="viewer" class="panel">
+    <div class="panel-head">
+      <span id="pageInfo">页面预览</span>
+      <button id="btnCollapse" class="collapse-btn" title="折叠/展开预览栏"><span class="icn" data-icon="chevrons-left"></span></button>
+    </div>
+    <div id="annotPanel" class="annot-panel hidden">
+      <span class="ap-title">标注</span>
+      <div class="ap-modes">
+        <button id="apModeExclude" class="ap-mode active" title="框内内容跳过识别">跳过选区</button>
+        <button id="apModeInclude" class="ap-mode" title="仅保留框内内容">仅识别选区</button>
+      </div>
+      <label class="annot-apply"><input type="checkbox" id="annotApplyAll"> 应用到全部页</label>
+      <span class="ap-hint" id="apHint">拖拽框选范围 · 点击框可删除</span>
+      <div class="ap-actions">
+        <button id="btnAnnotClear" title="清除标注并恢复全文"><span class="icn" data-icon="eraser"></span> 清除</button>
+        <button id="btnAnnotDone" title="退出标注模式">完成</button>
+        <button id="btnAnnotSave" class="primary" title="应用标注"><span class="icn" data-icon="check"></span> 应用</button>
+      </div>
+    </div>
+    <div id="imageBox"><div class="placeholder">导入文件后在此预览原图</div></div>
+    <div class="viewer-bar">
+      <button id="prevPage" title="上一页"><span class="icn" data-icon="chevron-left"></span></button>
+      <span id="pageNo">-</span>
+      <button id="nextPage" title="下一页"><span class="icn" data-icon="chevron-right"></span></button>
+      <span class="vbar-sep"></span>
+      <button id="btnZoomOut" title="缩小">−</button>
+      <span id="zoomPct">100%</span>
+      <button id="btnZoomIn" title="放大">+</button>
+      <button id="btnZoomFit" title="适应屏幕">适应</button>
+      <span class="vbar-sep"></span>
+      <button id="btnReprocess" title="全文高精度识别（含表格/公式）"><span class="icn" data-icon="scan-text"></span> 全文识别</button>
+      <button id="btnAnnotate" title="标注区域（跳过/仅识别）"><span class="icn" data-icon="square-dashed"></span> 标注</button>
+    </div>
+  </section>
+  <div id="splitB" class="splitter" title="拖拽调整宽度"></div>
+  <section id="editor" class="panel">
+    <div class="editor-toolbar" id="toolbar">
+      <span class="ql-formats">
+        <select class="ql-header"><option value="1">标题1</option><option value="2">标题2</option><option value="3">标题3</option><option selected>正文</option></select>
+      </span>
+      <span class="ql-formats">
+        <button class="ql-bold" title="加粗"></button>
+        <button class="ql-italic" title="斜体"></button>
+        <button class="ql-underline" title="下划线"></button>
+        <button class="ql-strike" title="删除线"></button>
+      </span>
+      <span class="ql-formats">
+        <select class="ql-color"></select>
+        <select class="ql-background"></select>
+      </span>
+      <span class="ql-formats">
+        <button class="ql-list" value="ordered" title="有序列表"></button>
+        <button class="ql-list" value="bullet" title="无序列表"></button>
+        <button class="ql-indent" value="-1" title="减少缩进"></button>
+        <button class="ql-indent" value="+1" title="增加缩进"></button>
+      </span>
+      <span class="ql-formats">
+        <button class="ql-align" value=""></button>
+        <button class="ql-align" value="center"></button>
+        <button class="ql-align" value="right"></button>
+        <button class="ql-align" value="justify"></button>
+      </span>
+      <span class="ql-formats">
+        <button class="ql-clean" title="清除格式"></button>
+      </span>
+    </div>
+    <div class="export-bar">
+      <div class="bar-group">
+        <span class="group-label">校对</span>
+        <button id="btnPunc" title="修复西文标点（转全角/配对修正，不擅自加句号）"><span class="icn" data-icon="text-quote"></span> 标点修复</button>
+        <button id="btnPuncSel" title="仅修复选中文字"><span class="icn" data-icon="highlighter"></span> 选区标点修复</button>
+        <button id="btnPara" title="段落快捷修复（合并碎行/删页码）"><span class="icn" data-icon="pilcrow"></span> 段落修复</button>
+        <button id="btnUndoFix" title="撤销上一步修复"><span class="icn" data-icon="undo-2"></span> 撤销修复</button>
+        <button id="btnSpell" title="中英文拼写检查（离线）"><span class="icn" data-icon="spell-check"></span> 拼写检查</button>
+      </div>
+      <div class="bar-group">
+        <span class="group-label">识别</span>
+        <button id="btnDetect" title="低阈值重扫当前页的表格/公式"><span class="icn" data-icon="scan-text"></span> 特殊格式识别</button>
+      </div>
+      <div class="bar-group">
+        <span class="group-label">检索</span>
+        <button id="btnFind" title="查找"><span class="icn" data-icon="search"></span> 查找</button>
+        <button id="btnReplace" title="替换"><span class="icn" data-icon="arrow-right-left"></span> 替换</button>
+      </div>
+      <div class="bar-group">
+        <span class="group-label">视图</span>
+        <button id="btnDivide" title="开启/关闭页面划分显示"><span class="icn" data-icon="rows-3"></span> 隐藏页面划分</button>
+        <span class="version-wrap">
+          <button id="btnVersions" title="编辑内容版本管理（可回到任意历史状态）"><span class="icn" data-icon="history"></span> 版本</button>
+          <div id="versionMenu" class="version-menu hidden"></div>
+        </span>
+      </div>
+      <span class="bar-spacer"></span>
+      <div class="export-wrap">
+        <button id="btnExport" class="primary" title="保存编辑并导出"><span class="icn" data-icon="download"></span> 导出</button>
+        <div id="exportMenu" class="export-menu hidden">
+          <button data-fmt="docx"><span class="em-name">docx</span><span class="em-desc">Word 文档</span></button>
+          <button data-fmt="txt"><span class="em-name">txt</span><span class="em-desc">纯文本</span></button>
+          <button data-fmt="pdf"><span class="em-name">pdf</span><span class="em-desc">双层 PDF</span></button>
+          <button data-fmt="md"><span class="em-name">md</span><span class="em-desc">Markdown</span></button>
+          <button data-fmt="xlsx"><span class="em-name">xlsx</span><span class="em-desc">表格</span></button>
+        </div>
+      </div>
+    </div>
+    <div id="regionBar" class="region-bar hidden">
+      <span class="icn" data-icon="scan-text"></span>
+      <span class="region-bar-text">区域结果视图 · 仅显示本次框选识别的内容</span>
+      <button id="btnBackFull" title="返回全文（区域内容已保留在文档与版本中）"><span class="icn" data-icon="undo-2"></span> 回到全文</button>
+    </div>
+    <div id="diffPanel" class="diff hidden">
+      <div class="diff-head"><span>修复建议（<span id="diffCount">0</span> 处）</span><button id="btnDiffClose" title="收起建议面板"><span class="icn" data-icon="x"></span></button></div>
+      <div id="diffList"></div>
+    </div>
+    <div id="searchBar" class="search-bar hidden">
+      <input id="findInput" type="text" placeholder="查找…">
+      <span id="findCount" class="find-count">0/0</span>
+      <button id="btnFindPrev" title="上一个"><span class="icn" data-icon="chevron-up"></span></button>
+      <button id="btnFindNext" title="下一个"><span class="icn" data-icon="chevron-down"></span></button>
+      <input id="replaceInput" type="text" placeholder="替换为…">
+      <button id="btnReplaceOne" title="替换当前">替换</button>
+      <button id="btnReplaceAll" title="全部替换">全部替换</button>
+      <button id="btnFindClose" title="关闭"><span class="icn" data-icon="x"></span></button>
+    </div>
+    <div id="editorBox"></div>
+  </section>
+</main>
+<div id="dropZone" class="drop-zone hidden">
+  <div class="drop-inner">
+    <span class="icn lg" data-icon="upload"></span>
+    <div class="drop-title">松开立即识别</div>
+    <div class="drop-sub">支持 PDF / PNG / JPG / TIFF / BMP / WebP</div>
+  </div>
+</div>
+<div id="licenseModal" class="license-modal hidden">
+  <div class="lm-card">
+    <div class="lm-head">
+      <span class="lm-title">开源软件许可</span>
+      <button id="btnLicenseClose" class="collapse-btn" title="关闭"><span class="icn" data-icon="x"></span></button>
+    </div>
+    <div class="lm-body">
+      <p class="lm-note">OctoOCR-offline 完全离线运行，下列开源项目以本地依赖形式随附（未做修改）。</p>
+      <div class="lm-list">
+        <div class="lm-item"><span class="lm-name">RapidOCR（onnxruntime 版）</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">文字检测 / 识别</span></div>
+        <div class="lm-item"><span class="lm-name">ONNX Runtime</span><span class="lm-lic">MIT</span><span class="lm-use">模型推理运行时</span></div>
+        <div class="lm-item"><span class="lm-name">PyMuPDF</span><span class="lm-lic">AGPL-3.0 / 商业双许可</span><span class="lm-use">PDF 解析与渲染</span></div>
+        <div class="lm-item"><span class="lm-name">OpenCV</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">图像预处理</span></div>
+        <div class="lm-item"><span class="lm-name">NumPy</span><span class="lm-lic">BSD-3-Clause</span><span class="lm-use">数值计算</span></div>
+        <div class="lm-item"><span class="lm-name">Pillow</span><span class="lm-lic">MIT-CMU</span><span class="lm-use">图像读写</span></div>
+        <div class="lm-item"><span class="lm-name">sherpa-onnx</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">标点模型推理</span></div>
+        <div class="lm-item"><span class="lm-name">rapid-layout（PP-DocLayout）</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">版面分析</span></div>
+        <div class="lm-item"><span class="lm-name">rapid-table（SLANet）</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">表格结构识别</span></div>
+        <div class="lm-item"><span class="lm-name">rapid-latex-ocr</span><span class="lm-lic">Apache-2.0</span><span class="lm-use">公式识别</span></div>
+        <div class="lm-item"><span class="lm-name">python-docx</span><span class="lm-lic">MIT</span><span class="lm-use">Word 导出</span></div>
+        <div class="lm-item"><span class="lm-name">openpyxl</span><span class="lm-lic">MIT</span><span class="lm-use">Excel 导出</span></div>
+        <div class="lm-item"><span class="lm-name">PyCryptodomex</span><span class="lm-lic">BSD / Public Domain</span><span class="lm-use">加密原语</span></div>
+        <div class="lm-item"><span class="lm-name">GmSSL</span><span class="lm-lic">BSD</span><span class="lm-use">国密算法</span></div>
+        <div class="lm-item"><span class="lm-name">SymSpellPy</span><span class="lm-lic">MIT</span><span class="lm-use">英文拼写检查</span></div>
+        <div class="lm-item"><span class="lm-name">Quill 2.0</span><span class="lm-lic">BSD-3-Clause</span><span class="lm-use">富文本编辑器</span></div>
+        <div class="lm-item"><span class="lm-name">Lucide</span><span class="lm-lic">ISC</span><span class="lm-use">界面图标</span></div>
+      </div>
+      <p class="lm-fine">识别模型：PP-OCRv5 / PP-DocLayout / SLANet（Apache-2.0，PaddlePaddle）；LaTeX-OCR（MIT）；ct-punc（sherpa-onnx，Apache-2.0）。英文词频数据：hermitdave/FrequencyWords（MIT）。</p>
+    </div>
+  </div>
+</div>
+<div id="toastBox"></div>
+<script src="/static/vendor/quill.js"></script>
+<script src="/static/icons.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

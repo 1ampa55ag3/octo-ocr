@@ -1,0 +1,37 @@
+[project]
+name = "mdun"
+version = "0.21.0"
+description = "OctoOCR-offline —— 完全离线的 OCR 与文档文字修复工作站"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "lesetruck" }]
+keywords = ["ocr", "offline", "pdf", "punctuation-restoration"]
+dependencies = [
+  "numpy>=1.24",
+  "opencv-python-headless>=4.8",
+  "pillow>=10",
+  "rapidocr-onnxruntime>=1.3",
+  "pymupdf>=1.24",
+  "python-docx>=1.1",
+  "gmssl>=3.2",
+  "sherpa-onnx>=1.10",
+  "rapid-table>=3.0.2",
+  "rapid-layout>=1.2.1",
+  "rapid-latex-ocr>=0.0.9",
+  "tokenizers>=0.20",
+  "omegaconf>=2.3",
+  "colorlog>=6.0",
+  "openpyxl>=3.1",
+]
+
+[project.scripts]
+mdun = "mdun.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdun"]
+

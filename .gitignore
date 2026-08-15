@@ -1,0 +1,44 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pycorrector/
+
+# ---- 虚拟环境与缓存 ----
+.venv/
+.uv-cache/
+.pip-cache/
+
+# ---- 运行时数据（模型/上传/导出/缓存/审计）----
+models/
+tmp/
+exports/
+page_cache/
+data-dir/
+out/
+out_formula/
+out_table/
+audit.log
+audit.jsonl
+*.mdun.json
+*.ed.docx
+*.edited.*
+*.searchable.pdf
+
+# ---- 密钥与授权（私钥严禁入库；公钥随仓库分发供离线授权校验）----
+vendor_private.pem
+vendor_private.key
+license.json
+
+# ---- 系统与编辑器 ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- 测试与开发辅助（不随仓库分发）----
+tests/
+scripts/gen_test_images.py
+scripts/gen_region_samples.py
