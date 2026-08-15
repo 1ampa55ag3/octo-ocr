@@ -1,0 +1,20 @@
+numpy>=1.24
+opencv-python-headless>=4.8
+pillow>=10
+rapidocr-onnxruntime==1.4.4
+pymupdf>=1.24
+python-docx>=1.1
+gmssl>=3.2
+sherpa-onnx>=1.10
+rapid-table==3.0.2
+rapid-layout==1.2.1
+tokenizers>=0.20
+omegaconf>=2.3
+colorlog>=6.0
+openpyxl>=3.1
+opencc-python-reimplemented>=0.1.7
+symspellpy>=6.9
+# rapid_latex_ocr / rapid_layout 内部 import 但未声明的依赖
+chardet
+requests
+tqdm

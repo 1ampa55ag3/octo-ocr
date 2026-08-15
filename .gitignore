@@ -49,3 +49,4 @@ vendor_public.pem
 docs/*
 !docs/CHANGELOG.md
 storage.json
+!docs/harmony-pc-deploy.md

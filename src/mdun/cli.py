@@ -95,7 +95,7 @@ def cmd_export(args) -> int:
 def cmd_serve(args) -> int:
     from mdun.web.server import run
 
-    run(host="127.0.0.1", port=args.port, data_dir=args.data_dir)
+    run(host=args.host, port=args.port, data_dir=args.data_dir)
     return 0
 
 
@@ -172,8 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--visible-text", action="store_true")
     e.set_defaults(func=cmd_export)
 
-    s = sub.add_parser("serve", help="启动本地离线校对工作台（127.0.0.1）")
+    s = sub.add_parser("serve", help="启动本地离线校对工作台")
     s.add_argument("--port", type=int, default=8788)
+    s.add_argument("--host", default="127.0.0.1", help="监听地址（局域网访问填 0.0.0.0）")
     s.set_defaults(func=cmd_serve)
 
     l = sub.add_parser("license", help="离线授权管理")
