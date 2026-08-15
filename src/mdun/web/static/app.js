@@ -492,6 +492,7 @@ $("btnBackFull").onclick = function () {
 // ---- 打开项目：整篇文档装入编辑器 ----
 function openProject(data, keepPage) {
   current = data;
+  linkFocus = null; linkHover = null; linkHoverLine = null; lastEditorLinkKey = "";
   if (!keepPage || !data.pages || pageIdx >= data.pages.length) pageIdx = 0;
   var ops = [];
   (data.pages || []).forEach(function (p, i) {
@@ -562,6 +563,309 @@ function applyLowConfMarks() {
     });
   });
 }
+// ---- 图文对照（行级：悬停/光标 ↔ 预览框高亮；点击框定位文本）----
+// 数据来源：PageData.lines（行级识别框，坐标与页面 width/height 同空间）
+var linkMode = true;            // 对照图层开关（默认开启）
+var linkLayerEl = null;         // 当前预览页的对照图层
+var linkFocus = null;           // {page, keys:[], low} 编辑器侧触发的高亮框
+var linkHover = null;           // {page, key, box, item} 预览图上悬停的框
+var linkHoverLine = null;       // {el} 预览悬停时编辑器侧轻高亮的行
+var lastEditorLinkKey = "";     // 编辑器 hover/光标防抖键
+
+function boxKey(b) { return (b || []).join(","); }
+function normCmpText(t) { return (t || "").replace(/\s+/g, ""); }
+// delta 索引（embed 占 1）→ 纯文本索引（pageTextBounds 使用文本空间）
+function deltaToTextIndex(off) {
+  var ops = quill.getContents().ops;
+  var di = 0, ti = 0;
+  for (var i = 0; i < ops.length; i++) {
+    var ins = ops[i].insert;
+    var len = typeof ins === "string" ? ins.length : 1;
+    if (di + len > off) return typeof ins === "string" ? ti + (off - di) : ti;
+    di += len;
+    if (typeof ins === "string") ti += ins.length;
+  }
+  return ti;
+}
+function pageOfOffset(off) {
+  // off 为 delta 空间的行偏移；pageTextBounds 边界是纯文本空间，需换算
+  var ti = deltaToTextIndex(off);
+  var bounds = pageTextBounds();
+  for (var i = 0; i < bounds.length - 1; i++) {
+    if (ti >= bounds[i] && ti < bounds[i + 1]) return i;
+  }
+  return -1;
+}
+
+function matchPageBoxes(pageIdx, lineText) {
+  var out = [];
+  var p = current && current.pages[pageIdx];
+  if (!p) return out;
+  var a = normCmpText(lineText);
+  if (!a) return out;
+  var cands = [];
+  (p.lines || []).forEach(function (it) { cands.push({ text: it.text, box: it.box }); });
+  if (!cands.length && p.paras) {
+    p.paras.forEach(function (para) { cands.push({ text: para.text, box: para.box }); });
+  }
+  cands.forEach(function (c) {
+    var b = normCmpText(c.text);
+    if (!b) return;
+    var hit = (a.length < 3 || b.length < 3) ? a === b : (a.indexOf(b) >= 0 || b.indexOf(a) >= 0);
+    if (!hit) return;
+    var bx = c.box || [0, 0, 0, 0];
+    if (bx[2] > bx[0] && bx[3] > bx[1] && out.indexOf(boxKey(bx)) < 0) out.push(bx);
+  });
+  return out;
+}
+
+function renderLinkBoxes() {
+  if (!linkLayerEl) return;
+  linkLayerEl.querySelectorAll(".link-box").forEach(function (n) { n.remove(); });
+  if (!linkMode || annotMode || !current) return;
+  var p = current.pages[pageIdx];
+  if (!p || !(p.lines || []).length) return;
+  var r = linkLayerEl.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  var w = p.width || r.width, h = p.height || r.height;
+  var focusKeys = {};
+  if (linkFocus && linkFocus.page === pageIdx) {
+    linkFocus.keys.forEach(function (k) { focusKeys[k] = true; });
+  }
+  var lowKeys = {};
+  (p.low_conf || []).forEach(function (lc) { lowKeys[boxKey(lc.box)] = true; });
+  var hoverKey = linkHover && linkHover.page === pageIdx ? linkHover.key : null;
+  (p.lines || []).forEach(function (it) {
+    var b = it.box || [0, 0, 0, 0];
+    if (!(b[2] > b[0] && b[3] > b[1])) return;
+    var x0 = Math.max(0, Math.min(1, b[0] / w)), y0 = Math.max(0, Math.min(1, b[1] / h));
+    var x1 = Math.max(x0, Math.min(1, b[2] / w)), y1 = Math.max(y0, Math.min(1, b[3] / h));
+    if (x1 - x0 < 0.001 || y1 - y0 < 0.001) return;
+    var key = boxKey(b);
+    var div = document.createElement("div");
+    div.className = "link-box" + (lowKeys[key] ? " low" : "");
+    if (focusKeys[key]) div.classList.add("on");
+    if (linkFocus && linkFocus.low && focusKeys[key]) div.classList.add("low-on");
+    if (hoverKey === key) div.classList.add("hover");
+    div.style.left = (x0 * r.width) + "px";
+    div.style.top = (y0 * r.height) + "px";
+    div.style.width = ((x1 - x0) * r.width) + "px";
+    div.style.height = ((y1 - y0) * r.height) + "px";
+    linkLayerEl.appendChild(div);
+  });
+}
+
+function showPreviewPage(n) {
+  if (!current) return;
+  n = Math.max(0, Math.min(n, current.pages.length - 1));
+  pageIdx = n;
+  renderPage();
+}
+
+function focusLinkOnLine(page, text) {
+  var boxes = matchPageBoxes(page, text);
+  linkFocus = { page: page, keys: boxes.map(boxKey), low: false };
+  if (page !== pageIdx) showPreviewPage(page);
+  else renderLinkBoxes();
+}
+
+function clearLinkFocus() {
+  linkFocus = null;
+  lastEditorLinkKey = "";
+  renderLinkBoxes();
+}
+
+function editorLineFromNode(node) {
+  if (!node) return null;
+  var el = node.nodeType === 3 ? node.parentElement : node;
+  while (el && el !== $("editorBox") && el !== document.body && el !== document.documentElement) {
+    var par = el.parentElement;
+    if (!par) return null;
+    if (par.classList && par.classList.contains("ql-editor")) return el;
+    if (el.tagName === "LI" && par.parentElement && par.parentElement.classList && par.parentElement.classList.contains("ql-editor")) return el;
+    el = par;
+  }
+  return null;
+}
+
+function handleLowConfHover(el) {
+  var blot = Quill.find(el);
+  if (!blot) return;
+  var off = blot.offset();
+  var txt = quill.getText(off, blot.length()).trim();
+  var page = pageOfOffset(off);
+  if (page < 0) return;
+  var key = "low:" + page + ":" + off;
+  if (key === lastEditorLinkKey) return;
+  lastEditorLinkKey = key;
+  // 相邻低置信行会被 Quill 合并为一个 span：用包含匹配找出全部对应框；
+  // 优先用整行文本匹配（span 边界可能截断行尾字符）
+  var lineEl = editorLineFromNode(el);
+  var lineBlot = lineEl ? Quill.find(lineEl) : null;
+  var lineText = lineBlot ? quill.getText(lineBlot.offset(), Math.max(0, lineBlot.length() - 1)).trim() : "";
+  var st = normCmpText(lineText || txt);
+  var matched = [];
+  var p = current.pages[page];
+  (p && p.low_conf || []).forEach(function (x) {
+    var xt = normCmpText(x.text);
+    if (xt && st && (xt === st || (st.indexOf(xt) >= 0 && xt.length >= 2) || (xt.indexOf(st) >= 0 && st.length >= 2))) {
+      if (matched.indexOf(x) < 0) matched.push(x);
+    }
+  });
+  linkFocus = { page: page, keys: matched.map(function (x) { return boxKey(x.box); }), low: true };
+  if (page !== pageIdx) showPreviewPage(page);
+  else renderLinkBoxes();
+}
+
+function handleEditorLinkHover(e) {
+  if (!current || viewMode !== "full") return;
+  var tEl = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
+  var lowEl = tEl && tEl.closest ? tEl.closest(".low-conf") : null;
+  if (lowEl) { handleLowConfHover(lowEl); return; }
+  var lineEl = editorLineFromNode(e.target);
+  if (!lineEl) return;
+  var blot = Quill.find(lineEl);
+  if (!blot) return;
+  var off = blot.offset();
+  var text = quill.getText(off, Math.max(0, blot.length() - 1)).trim();
+  if (!text) { clearLinkFocus(); return; }
+  var page = pageOfOffset(off);
+  if (page < 0) return;
+  var key = page + ":" + off;
+  if (key === lastEditorLinkKey) return;
+  lastEditorLinkKey = key;
+  focusLinkOnLine(page, text);
+}
+
+function linkBoxAt(e) {
+  if (!linkMode || annotMode || !linkLayerEl || !current) return null;
+  var p = current.pages[pageIdx];
+  if (!p || !(p.lines || []).length) return null;
+  var r = linkLayerEl.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  var w = p.width || r.width, h = p.height || r.height;
+  var px = (e.clientX - r.left) / r.width * w;
+  var py = (e.clientY - r.top) / r.height * h;
+  for (var i = 0; i < p.lines.length; i++) {
+    var b = p.lines[i].box || [0, 0, 0, 0];
+    if (px >= b[0] && px <= b[2] && py >= b[1] && py <= b[3]) {
+      return { idx: i, key: boxKey(b), box: b, item: p.lines[i] };
+    }
+  }
+  return null;
+}
+
+function findEditorLineForItem(item) {
+  var a = normCmpText(item && item.text);
+  if (!a || a.length < 2) return null;
+  var bounds = pageTextBounds();
+  var lines = collectLines();
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (l.pageBreak) continue;
+    var loff = deltaToTextIndex(l.offset);
+    if (loff < bounds[pageIdx] || loff >= bounds[pageIdx + 1]) continue;
+    var b = normCmpText(l.text);
+    if (!b) continue;
+    if (a === b || (a.indexOf(b) >= 0 && b.length >= 4) || (b.indexOf(a) >= 0 && a.length >= 4)) return l.line.domNode;
+  }
+  return null;
+}
+
+function clearLinkHover() {
+  linkHover = null;
+  if (linkHoverLine && linkHoverLine.el) linkHoverLine.el.classList.remove("link-hover");
+  linkHoverLine = null;
+  if (linkLayerEl) linkLayerEl.style.cursor = "";
+  renderLinkBoxes();
+}
+
+function handleLinkLayerMove(e) {
+  var hit = linkBoxAt(e);
+  var key = hit ? hit.key : null;
+  if (linkHover && linkHover.key === key) return;
+  linkHover = hit ? { page: pageIdx, key: key, box: hit.box, item: hit.item } : null;
+  if (linkHoverLine && linkHoverLine.el) linkHoverLine.el.classList.remove("link-hover");
+  linkHoverLine = null;
+  if (hit) {
+    var lineEl = findEditorLineForItem(hit.item);
+    if (lineEl) { lineEl.classList.add("link-hover"); linkHoverLine = { el: lineEl }; }
+  }
+  if (linkLayerEl) linkLayerEl.style.cursor = hit ? "pointer" : "";
+  renderLinkBoxes();
+}
+
+function locateItemInEditor(item) {
+  var t = (item && item.text || "").trim();
+  if (!t) return -1;
+  var bounds = pageTextBounds();
+  var tm = deltaTextMap();
+  var tpos = tm.text.indexOf(t, bounds[pageIdx]);
+  if (tpos >= 0 && tpos < bounds[pageIdx + 1]) return tm.map[tpos];
+  var lines = collectLines();
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (l.pageBreak) continue;
+    var loff = deltaToTextIndex(l.offset);
+    if (loff < bounds[pageIdx] || loff >= bounds[pageIdx + 1]) continue;
+    var a = normCmpText(l.text), b = normCmpText(t);
+    if (a && b && (a === b || (a.indexOf(b) >= 0 && b.length >= 3) || (b.indexOf(a) >= 0 && a.length >= 3))) return l.offset;
+  }
+  return -1;
+}
+
+function handleLinkLayerClick(e) {
+  var hit = linkBoxAt(e);
+  if (!hit) return;
+  var pos = locateItemInEditor(hit.item);
+  if (pos < 0) { showToast("该行文字已被编辑，未找到对应位置"); return; }
+  linkFocus = { page: pageIdx, keys: [hit.key], low: false };
+  renderLinkBoxes();
+  var lineArr = quill.getLines(pos, 1);
+  var line = lineArr && lineArr[0];
+  if (line) {
+    quill.setSelection(pos, Math.max(1, line.length() - 1), "silent");
+    if (line.domNode && line.domNode.scrollIntoView) line.domNode.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (line.domNode && line.domNode.classList) {
+      line.domNode.classList.add("link-flash");
+      setTimeout(function () { line.domNode.classList.remove("link-flash"); }, 1600);
+    }
+  }
+  showToast("已定位到右侧文字（第 " + (pageIdx + 1) + " 页）", "ok");
+}
+
+$("editorBox").addEventListener("mouseover", function (e) {
+  if (!linkMode) return;
+  handleEditorLinkHover(e);
+});
+$("editorBox").addEventListener("mouseleave", function () { clearLinkFocus(); });
+
+quill.on("selection-change", function (range) {
+  if (!range || !current || !linkMode || viewMode !== "full") return;
+  var lineArr2 = quill.getLines(range.index, 1);
+  var line = lineArr2 && lineArr2[0];
+  if (!line) return;
+  var off = line.offset();
+  var text = quill.getText(off, Math.max(0, line.length() - 1)).trim();
+  if (!text) { clearLinkFocus(); return; }
+  var page = pageOfOffset(off);
+  if (page < 0) return;
+  var key = page + ":" + off;
+  if (key === lastEditorLinkKey) return;
+  lastEditorLinkKey = key;
+  focusLinkOnLine(page, text);
+});
+
+$("btnLink").onclick = function () {
+  if (!current) { showToast("请先导入文件", "err"); return; }
+  linkMode = !linkMode;
+  $("btnLink").classList.toggle("active", linkMode);
+  if (linkLayerEl) linkLayerEl.classList.toggle("hidden", !(linkMode && !annotMode));
+  if (!linkMode) { clearLinkFocus(); clearLinkHover(); }
+  else renderLinkBoxes();
+  showToast(linkMode ? "图文对照已开启：悬停文字行，预览高亮对应位置" : "图文对照已关闭");
+};
+
 // ---- 页面联动 ----
 function gotoPage(n) {
   if (!current) return;
@@ -1330,8 +1634,15 @@ function renderPage() {
   var layer = document.createElement("div");
   layer.className = "annot-layer" + (annotMode ? "" : " hidden");
   wrap.appendChild(layer);
+  var linkLayer = document.createElement("div");
+  linkLayer.className = "link-layer" + ((linkMode && !annotMode) ? "" : " hidden");
+  wrap.appendChild(linkLayer);
+  linkLayer.onmousemove = handleLinkLayerMove;
+  linkLayer.onclick = handleLinkLayerClick;
+  linkLayer.onmouseleave = clearLinkHover;
   annotLayerEl = layer;
   annotWrapEl = wrap;
+  linkLayerEl = linkLayer;
   $("imageBox").innerHTML = "";
   $("imageBox").appendChild(wrap);
   initAnnotBoxes();
@@ -1519,6 +1830,7 @@ function applyZoom() {
   }
   $("zoomPct").textContent = Math.round(zoomScale * 100) + "%";
   renderAnnotBoxes();
+  renderLinkBoxes();
 }
 function setZoom(s) {
   zoomScale = Math.max(0.3, Math.min(4, s));

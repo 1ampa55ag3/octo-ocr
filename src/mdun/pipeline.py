@@ -12,7 +12,14 @@ from pathlib import Path
 import numpy as np
 
 from mdun.config import Settings
-from mdun.ocr import OcrEngine, PageOcrResult, group_lines_to_blocks, blocks_to_ordered_lines, iter_pages
+from mdun.ocr import (
+    OcrEngine,
+    PageOcrResult,
+    group_lines_to_blocks,
+    blocks_to_ordered_lines,
+    iter_pages,
+    extract_text_lines,
+)
 from mdun.postprocess import (
     Line,
     Para,
@@ -53,6 +60,7 @@ class PageData:
     height: float = 0.0
     ignore_regions: list[dict] = field(default_factory=list)  # 归一化忽略区域 [{x0,y0,x1,y1}]
     low_conf: list[dict] = field(default_factory=list)        # 低置信行 [{text, box, conf}]
+    lines: list[dict] = field(default_factory=list)           # 行级识别结果 [{text, box, conf}]（图文对照，坐标与 width/height 同空间）
 
 
 @dataclass
@@ -140,20 +148,37 @@ class Pipeline:
         """处理单页（流式管线的最小单元，可被并行调度复用）。"""
         pd = PageData(index=pin.index, kind=pin.kind, width=pin.width, height=pin.height)
         if pin.is_digital:
+            # 电子页：文字层行 + 坐标（PDF 点，与 width/height 同空间）
             pd.text = pin.text or ""
             pd.paras = self._paras_from_text(pd.text)
+            pd.lines = [
+                {"text": text, "box": [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)], "conf": 1.0}
+                for text, x0, y0, x1, y1 in extract_text_lines(pin.source, pin.index)
+                if text.strip()
+            ]
         else:
             lines, _ = self.engine.recognize(pin.image)
             if lines:
+                # 识别框坐标基于渲染像素：页面宽高统一为渲染尺寸，
+                # 图文对照/忽略区域/版面分析/页眉页脚判定共用同一坐标系
+                if pin.image is not None:
+                    pin.width = float(pin.image.shape[1])
+                    pin.height = float(pin.image.shape[0])
+                    pd.width = pin.width
+                    pd.height = pin.height
                 blocks = group_lines_to_blocks(lines, pin.width, pin.height)
                 ordered = blocks_to_ordered_lines(blocks)
                 paras = merge_lines(ordered, block_width=pin.width)
                 pd.conf_avg = sum(l.conf for l in lines) / len(lines)
                 pd.text = "\n\n".join(p.text for p in paras)
                 pd.paras = [self._para_out(p, blocks) for p in paras]
-                pd.low_conf = [
+                pd.lines = [
                     {"text": l.text, "box": [round(l.x0, 1), round(l.y0, 1), round(l.x1, 1), round(l.y1, 1)], "conf": round(l.conf, 3)}
-                    for l in lines if l.conf < self.LOW_CONF_THRESHOLD and l.text.strip()
+                    for l in lines if l.text.strip()
+                ]
+                pd.low_conf = [
+                    {"text": l["text"], "box": l["box"], "conf": l["conf"]}
+                    for l in pd.lines if l["conf"] < self.LOW_CONF_THRESHOLD
                 ]
         if not self._coarse:
             self._process_regions(pd, pin)

@@ -359,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             proj = _store.get(proj_id)
         if not proj:
             return self._json({"error": "not found"}, 404)
-        pages, plain_per_page = _ops_to_pages(ops)
+        pages, plain_per_page = _ops_to_pages(ops, proj.get("pages") or [])
         proj["edited"] = True
         proj["edited_ops"] = ops
         proj["pages"] = pages
@@ -858,11 +858,19 @@ class Handler(BaseHTTPRequestHandler):
         token = _register_download(f)
         return self._json({"file": str(f), "download": f"/api/download/{token}", "filename": Path(f).name})
 
-def _ops_to_pages(ops: list) -> tuple[list[dict], list[str]]:
-    """Quill ops → 每页段落列表 + 每页纯文本（pageHead embed 划分页面）。"""
+def _ops_to_pages(ops: list, orig_pages: list | None = None) -> tuple[list[dict], list[str]]:
+    """Quill ops → 每页段落列表 + 每页纯文本（mdunPage embed 划分页面）。
+
+    orig_pages 传入时保留其中不随编辑变化的结构字段（页面几何、行级识别结果、
+    低置信行、忽略区域等），供图文对照与区域模式继续使用。
+    """
+    KEEP_PAGE_FIELDS = ("kind", "width", "height", "conf_avg", "seconds", "punc_edits",
+                        "removed", "low_conf", "lines", "ignore_regions", "region_mode")
     pages: dict[int, list[dict]] = {}
     tables_by_page: dict[int, list[dict]] = {}
+    seen_pages: set[int] = set()
     current_page = 0
+    seen_pages.add(0)
     buf = ""
     cur_attrs: dict = {}
 
@@ -886,8 +894,9 @@ def _ops_to_pages(ops: list) -> tuple[list[dict], list[str]]:
             continue
         if isinstance(ins, dict):
             if ins.get("mdunPage") is not None:
+                flush()  # 先归档上一页，再切换页码
                 current_page = int(ins["mdunPage"])
-                flush()
+                seen_pages.add(current_page)
             elif ins.get("mdunTable") is not None:
                 flush()
                 tables_by_page.setdefault(current_page, []).append({
@@ -897,13 +906,21 @@ def _ops_to_pages(ops: list) -> tuple[list[dict], list[str]]:
             else:
                 flush()  # 其他 embed（图片等）结束当前段
     flush()
-    max_page = max(pages.keys(), default=0)
+    # 页数由页面分隔 embed 决定：末页文本被清空时页结构不丢失
+    max_page = max(seen_pages, default=0)
+    orig_by_index = {int(p.get("index", i)): p for i, p in enumerate(orig_pages or [])}
     plain_per_page = ["\n\n".join(p["text"] for p in pages.get(i, [])) for i in range(max_page + 1)]
-    return [
-        {"index": i, "kind": "text", "text": plain_per_page[i],
-         "paras": pages.get(i, []), "tables": tables_by_page.get(i, [])}
-        for i in range(max_page + 1)
-    ], plain_per_page
+    out_pages: list[dict] = []
+    for i in range(max_page + 1):
+        page = {"index": i, "text": plain_per_page[i],
+                "paras": pages.get(i, []), "tables": tables_by_page.get(i, [])}
+        orig = orig_by_index.get(i)
+        if orig:
+            for k in KEEP_PAGE_FIELDS:
+                if k in orig:
+                    page[k] = orig[k]
+        out_pages.append(page)
+    return out_pages, plain_per_page
 
 _region_pipe = None
 _region_lock = threading.Lock()

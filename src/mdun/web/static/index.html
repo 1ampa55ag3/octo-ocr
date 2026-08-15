@@ -14,7 +14,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><img class="logo" src="/static/logo.png" alt="OctoOCR-offline"> OctoOCR-offline <span class="ver">v0.23.0</span> <span class="slogan">涉密不上网 · 上网不涉密</span></div>
+  <div class="brand"><img class="logo" src="/static/logo.png" alt="OctoOCR-offline"> OctoOCR-offline <span class="ver">v0.23.1</span> <span class="slogan">涉密不上网 · 上网不涉密</span></div>
   <div class="mid" id="jobBox">
     <div id="jobStatus" class="job-status hidden"></div>
     <div class="progress hidden" id="progressBar"><div id="progressFill"></div></div>
@@ -85,6 +85,8 @@
       <span id="zoomPct">100%</span>
       <button id="btnZoomIn" title="放大">+</button>
       <button id="btnZoomFit" title="适应屏幕">适应</button>
+      <span class="vbar-sep"></span>
+      <button id="btnLink" class="active" title="图文对照：悬停右侧文字行，预览高亮对应位置；点击识别框跳转文字"><span class="icn" data-icon="link-2"></span> 对照</button>
       <span class="vbar-sep"></span>
       <button id="btnReprocess" title="全文高精度识别（含表格/公式）"><span class="icn" data-icon="scan-text"></span> 全文识别</button>
       <button id="btnAnnotate" title="标注区域（跳过/仅识别）"><span class="icn" data-icon="square-dashed"></span> 标注</button>
