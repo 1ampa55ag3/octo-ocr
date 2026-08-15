@@ -32,10 +32,60 @@ from mdun.security import OfflineGuard, AuditLog
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _store: dict[str, dict] = {}
 _store_lock = threading.Lock()
+_store_dir: Path | None = None          # 项目存档目录（支持用户指定路径）
+
+
+def _storage_settings_path() -> Path:
+    return Path(_settings.data_dir) / "storage.json"
+
+
+def _resolve_store_dir() -> Path:
+    global _store_dir
+    if _store_dir is not None:
+        return _store_dir
+    _store_dir = Path(_settings.data_dir) / "projects"
+    try:
+        import json as _json
+
+        sp = _storage_settings_path()
+        if sp.exists():
+            saved = _json.loads(sp.read_text(encoding="utf-8"))
+            cand = Path(saved.get("path", "")).expanduser()
+            if saved.get("path") and cand.is_absolute():
+                cand.mkdir(parents=True, exist_ok=True)
+                _store_dir = cand
+    except Exception:  # noqa: BLE001
+        pass
+    _store_dir.mkdir(parents=True, exist_ok=True)
+    return _store_dir
+
+
+def _load_store() -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    d = _resolve_store_dir()
+    for f in d.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            out[data.get("id") or f.stem] = data
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def _save_project(proj_id: str) -> None:
+    with _store_lock:
+        proj = _store.get(proj_id)
+        if proj is None:
+            return
+        d = _resolve_store_dir()
+        tmp = d / f"{proj_id}.json.tmp"
+        tmp.write_text(json.dumps(proj, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(d / f"{proj_id}.json")
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 _worker = None
 _settings = None
+_t2s = None
 
 MAX_UPLOAD = 2 * 1024 * 1024 * 1024  # 2GB
 PAGE_CACHE_DIRNAME = "page_cache"
@@ -121,6 +171,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_reprocess()
         if url.path == "/api/delete":
             return self._handle_delete()
+        if url.path == "/api/t2s":
+            return self._handle_t2s()
+        if url.path == "/api/storage":
+            return self._handle_storage()
         if url.path == "/api/export":
             return self._handle_export()
         if url.path.startswith("/api/cancel/"):
@@ -279,6 +333,21 @@ class Handler(BaseHTTPRequestHandler):
         new_text, edits = repair_punctuation(text)
         return self._json({"text": new_text, "edits": [e.__dict__ for e in edits]})
 
+    # ---- 繁体转简体（opencc，纯本地）----
+    def _handle_t2s(self) -> None:
+        global _t2s
+        req = self._read_json()
+        texts = req.get("texts") or []
+        if _t2s is None:
+            from opencc import OpenCC
+
+            _t2s = OpenCC("t2s")
+        try:
+            out = [_t2s.convert(t) for t in texts]
+        except Exception as e:  # noqa: BLE001
+            return self._json({"error": f"转换失败: {e}"}, 500)
+        return self._json({"texts": out})
+
     # ---- 编辑保存（Quill ops）----
     def _handle_save_edit(self) -> None:
         req = self._read_json()
@@ -293,6 +362,7 @@ class Handler(BaseHTTPRequestHandler):
         proj["edited_ops"] = ops
         proj["pages"] = pages
         proj["edited_page_texts"] = plain_per_page
+        _save_project(proj_id)
         return self._json({"saved": True, "pages": len(pages)})
 
     # ---- 局部重新识别（框选区域 → 表格/公式）----
@@ -426,6 +496,7 @@ class Handler(BaseHTTPRequestHandler):
                     p["text"] = (p.get("text") or "").rstrip() + "\n\n" + region_text
             else:
                 region_text = ""
+        _save_project(proj_id)
         return self._json({"tables": tables, "formulas": formulas, "latex": latex, "text": region_text})
 
     # ---- 区域模式（全文 / 跳过选区 / 仅识别选区）----
@@ -466,6 +537,7 @@ class Handler(BaseHTTPRequestHandler):
             p["region_mode"] = mode
             p["ignore_regions"] = norm
             removed_total += _apply_region_mode(proj, p, mode, norm)
+        _save_project(proj_id)
         return self._json({"saved": True, "mode": mode, "pages": len(target_idx), "removed": removed_total})
 
     # ---- 全文重识别（粗识别后升级精度/表格/公式）----
@@ -498,6 +570,10 @@ class Handler(BaseHTTPRequestHandler):
 
         cache = Path(_settings.data_dir) / PAGE_CACHE_DIRNAME / proj_id
         shutil.rmtree(cache, ignore_errors=True)
+        try:
+            (_resolve_store_dir() / f"{proj_id}.json").unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
         return self._json({"deleted": True})
 
     # ---- 拼写检查 ----
@@ -644,11 +720,42 @@ class Handler(BaseHTTPRequestHandler):
             "formulas": len(formulas),
         })
 
+    # ---- 存档位置（项目持久化目录，用户可指定）----
+    def _handle_storage(self) -> None:
+        req = self._read_json()
+        if req.get("path"):
+            cand = Path(req["path"]).expanduser()
+            if not cand.is_absolute():
+                return self._json({"error": "需要输入完整文件夹路径"}, 400)
+            try:
+                cand.mkdir(parents=True, exist_ok=True)
+                # 迁移既有项目文件
+                old = _resolve_store_dir()
+                moved = 0
+                if old.resolve() != cand.resolve():
+                    for f in old.glob("*.json"):
+                        if not (cand / f.name).exists():
+                            f.replace(cand / f.name)
+                            moved += 1
+                global _store_dir
+                _store_dir = cand
+                _storage_settings_path().write_text(
+                    json.dumps({"path": str(cand)}, ensure_ascii=False), encoding="utf-8"
+                )
+                return self._json({"path": str(cand), "moved": moved})
+            except Exception as e:  # noqa: BLE001
+                return self._json({"error": f"无法使用该文件夹: {e}"}, 400)
+        d = _resolve_store_dir()
+        with _store_lock:
+            count = len(_store)
+        return self._json({"path": str(d), "count": count})
+
     # ---- 导出 ----
     def _handle_export(self) -> None:
         req = self._read_json()
         proj_id = req.get("id")
         fmt = req.get("format", "txt")
+        toc = req.get("toc") or None
         with _store_lock:
             proj = _store.get(proj_id)
         if not proj:
@@ -660,7 +767,7 @@ class Handler(BaseHTTPRequestHandler):
         if proj.get("edited_ops"):
             page_texts = proj.get("edited_page_texts") or [p["text"] for p in proj["pages"]]
             if fmt == "docx":
-                f = export_docx_from_ops(proj["edited_ops"], out_dir / f"{stem}.edited.docx")
+                f = export_docx_from_ops(proj["edited_ops"], out_dir / f"{stem}.edited.docx", toc=toc)
             elif fmt == "xlsx":
                 from openpyxl import Workbook
 
@@ -913,6 +1020,7 @@ def _run_job(job: dict) -> None:
         data["filename"] = job.get("filename") or Path(src).name
         with _store_lock:
             _store[proj_id] = data
+        _save_project(proj_id)
         with _jobs_lock:
             job["status"] = "done"
             job["project_id"] = proj_id
@@ -930,8 +1038,9 @@ def _run_job(job: dict) -> None:
 
 def run(host: str = "127.0.0.1", port: int = 8788, data_dir: str | Path | None = None) -> None:
     """启动本地工作台：全程 OfflineGuard 封锁外网，仅回环可用。"""
-    global _settings
+    global _settings, _store
     _settings = load_settings(str(data_dir) if data_dir else None)
+    _store = _load_store()
     OfflineGuard().enable()
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"OctoOCR 工作台已启动（完全离线）: http://{host}:{port}")

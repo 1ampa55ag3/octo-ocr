@@ -108,7 +108,19 @@ aside { flex:0 0 auto; width:190px; min-width:140px; max-width:420px; padding:va
 .collapse-btn:hover { color:var(--accent); background:var(--proj-bg); }
 .collapse-btn .icn { width:15px; height:15px; }
 .import-btn { width:100%; justify-content:center; margin-bottom:10px; }
-.side-foot { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.side-foot { margin-top: auto; padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.side-storage { padding: 4px 0 6px; }
+.ss-row { display: flex; align-items: center; justify-content: space-between; }
+.ss-label { font-size: 11px; color: var(--text-dim); }
+.ss-edit { font-size: 11px; color: var(--accent); background: transparent; border: none; cursor: pointer; padding: 0; }
+.ss-edit:hover { text-decoration: underline; }
+.ss-path { font-size: 11px; color: var(--text-dim); word-break: break-all; line-height: 1.4; }
+.storage-edit { margin-top: 6px; }
+.storage-edit input { width: 100%; height: 26px; padding: 0 10px; font-size: 12px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-s); outline: none; }
+.storage-edit input:focus { border-color: var(--accent); }
+.se-actions { display: flex; gap: 6px; margin-top: 6px; }
+.se-actions button { height: 24px; padding: 0 12px; font-size: 12px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-pill); cursor: pointer; }
+.se-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .lic-btn { font-size: 12px; letter-spacing: -0.1px; color: var(--text-dim); background: transparent; border: none; padding: 2px 0; cursor: pointer; }
 .lic-btn:hover { color: var(--accent); }
 /* 开源许可弹层 */
@@ -168,7 +180,7 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 .group-label { font-size:11px; color:var(--text-dim); letter-spacing:1px; flex:none; }
 .bar-group { display:flex; align-items:center; gap:6px; flex:none; }
 .bar-spacer { flex:1; min-width:8px; }
-.export-wrap { position:relative; flex:none; }
+.export-wrap { position:relative; flex:none; margin-left:auto; }
 .export-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:60; min-width:170px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-m); box-shadow:0 8px 28px var(--shadow); padding:4px; }
 .export-menu button { width:100%; height:auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 10px; background:transparent; border:none; border-radius:var(--radius-s); cursor:pointer; }
 .export-menu button:hover { background:var(--proj-bg); }
@@ -262,6 +274,9 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 /* ---- 公式样式 ---- */
 .mdun-formula { font-family: "SF Mono", Menlo, Consolas, monospace; font-style: italic; color: var(--text); display: block; text-align: center; margin: 6px 0; font-size: 14px; }
 /* ---- 拼写错误标记 ---- */
+.low-conf { background: rgba(255, 196, 0, .28); border-radius: 2px; cursor: pointer; }
+.low-conf:hover { background: rgba(255, 196, 0, .45); }
+.focus-box { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); z-index: 4; pointer-events: none; }
 .spell-err { text-decoration: underline wavy var(--danger); text-underline-offset: 3px; cursor: pointer; }
 .spell-err:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 /* ---- 页面分隔块 ---- */

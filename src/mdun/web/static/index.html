@@ -36,6 +36,20 @@
     <div id="projects"></div>
     <div class="hint" id="emptyHint">拖拽文件到窗口 / 粘贴 (⌘V)</div>
     <div class="side-foot">
+      <div class="side-storage">
+        <div class="ss-row">
+          <span class="ss-label">存档位置</span>
+          <button id="btnStorage" class="ss-edit" title="修改项目存档文件夹">修改</button>
+        </div>
+        <div class="ss-path" id="storagePath" title="">…</div>
+        <div class="storage-edit hidden" id="storageEdit">
+          <input id="storageInput" type="text" placeholder="输入完整文件夹路径，如 /Users/你的名字/Documents/OCR档案">
+          <div class="se-actions">
+            <button id="btnStorageSave" class="primary">保存</button>
+            <button id="btnStorageCancel">取消</button>
+          </div>
+        </div>
+      </div>
       <button id="btnLicenses" class="lic-btn" title="查看使用的开源项目与许可协议">开源许可</button>
     </div>
   </aside>
@@ -115,6 +129,7 @@
         <button id="btnPara" title="段落快捷修复（合并碎行/删页码）"><span class="icn" data-icon="pilcrow"></span> 段落修复</button>
         <button id="btnUndoFix" title="撤销上一步修复"><span class="icn" data-icon="undo-2"></span> 撤销修复</button>
         <button id="btnSpell" title="中英文拼写检查（离线）"><span class="icn" data-icon="spell-check"></span> 拼写检查</button>
+        <button id="btnT2S" title="全文繁体转简体（本地词典，离线）"><span class="icn" data-icon="languages"></span> 繁转简</button>
       </div>
       <div class="bar-group">
         <span class="group-label">识别</span>
@@ -128,6 +143,8 @@
       <div class="bar-group">
         <span class="group-label">视图</span>
         <button id="btnDivide" title="开启/关闭页面划分显示"><span class="icn" data-icon="rows-3"></span> 隐藏页面划分</button>
+        <button id="btnLink" title="图文对照：点击段落，预览定位原文位置"><span class="icn" data-icon="search"></span> 图文对照</button>
+        <button id="btnToc" title="导出 Word 时自动生成带页码的目录"><span class="icn" data-icon="list"></span> 目录</button>
         <span class="version-wrap">
           <button id="btnVersions" title="编辑内容版本管理（可回到任意历史状态）"><span class="icn" data-icon="history"></span> 版本</button>
           <div id="versionMenu" class="version-menu hidden"></div>

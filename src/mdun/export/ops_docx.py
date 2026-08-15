@@ -26,13 +26,28 @@ def _hex_rgb(color: str | None) -> RGBColor | None:
         return None
 
 
-def export_docx_from_ops(ops: list, out: str | Path, page_break_per_page: bool = False) -> Path:
+def export_docx_from_ops(ops: list, out: str | Path, page_break_per_page: bool = False, toc: list | None = None) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     doc = Document()
     normal = doc.styles["Normal"]
     normal.font.name = "DengXian"
     normal.font.size = Pt(11)
+
+    if toc:
+        from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+
+        head = doc.add_paragraph()
+        r = head.add_run("目录")
+        r.bold = True
+        r.font.size = Pt(16)
+        for entry in toc:
+            p = doc.add_paragraph()
+            pf = p.paragraph_format
+            pf.tab_stops.add_tab_stop(Pt(440), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+            p.add_run("  " * max(0, int(entry.get("level", 1)) - 1) + str(entry.get("text", "")))
+            p.add_run("\t" + str(entry.get("page", "")))
+        doc.add_page_break()
 
     para = doc.add_paragraph()
     line_attrs: dict = {}

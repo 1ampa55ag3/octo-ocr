@@ -9,6 +9,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+
 from mdun.config import Settings
 from mdun.ocr import OcrEngine, PageOcrResult, group_lines_to_blocks, blocks_to_ordered_lines, iter_pages
 from mdun.postprocess import (
@@ -50,6 +52,8 @@ class PageData:
     width: float = 0.0      # 页面坐标宽（数字页=PDF点；扫描页=渲染像素）
     height: float = 0.0
     ignore_regions: list[dict] = field(default_factory=list)  # 归一化忽略区域 [{x0,y0,x1,y1}]
+    low_conf: list[dict] = field(default_factory=list)        # 低置信行 [{text, box, conf}]
+    seals: list[dict] = field(default_factory=list)           # 检出的印章区域 [{box, conf}]
 
 
 @dataclass
@@ -131,6 +135,42 @@ class Pipeline:
             self.audit.ocr_done(name, len(project.pages), time.time() - t0)
         return project
 
+    LOW_CONF_THRESHOLD = 0.55  # 行置信度低于此值标记为「可能认错」
+
+    @staticmethod
+    def _remove_seals(img):
+        """红色圆形印章检测：检出的印章区域涂白，OCR 不再读取（红头文字条状、低圆度，不受影响）。"""
+        import cv2
+
+        h, w = img.shape[:2]
+        b = img[..., 0].astype(int)
+        g = img[..., 1].astype(int)
+        r = img[..., 2].astype(int)   # OpenCV BGR：红色在第 2 通道
+        red = ((r - np.maximum(g, b)) > 50) & (r > 110)
+        mask = (red.astype(np.uint8)) * 255
+        if int(mask.sum()) == 0:
+            return img, []
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        seals = []
+        for c in contours:
+            x, y, cw, ch = cv2.boundingRect(c)
+            area = float(cv2.contourArea(c))
+            if not (300 <= area <= 500_000):
+                continue
+            if cw < 16 or ch < 16:
+                continue
+            if max(cw, ch) / max(1, min(cw, ch)) > 1.6:   # 条状红字（红头标题/文号）排除
+                continue
+            per = cv2.arcLength(c, True)
+            circ = 4 * 3.14159 * area / max(1.0, per * per)   # 圆度
+            fill = float(cv2.countNonZero(mask[y:y + ch, x:x + cw])) / max(1.0, float(cw * ch))
+            if circ < 0.40 or fill < 0.30:
+                continue
+            seals.append({"box": [int(x), int(y), int(x + cw), int(y + ch)], "conf": round(min(1.0, circ), 3)})
+            img[y:y + ch, x:x + cw] = 255
+        return img, seals
+
     def _process_page(self, pin) -> PageData:
         """处理单页（流式管线的最小单元，可被并行调度复用）。"""
         pd = PageData(index=pin.index, kind=pin.kind, width=pin.width, height=pin.height)
@@ -138,6 +178,8 @@ class Pipeline:
             pd.text = pin.text or ""
             pd.paras = self._paras_from_text(pd.text)
         else:
+            if pin.image is not None:
+                pin.image, pd.seals = self._remove_seals(pin.image)
             lines, _ = self.engine.recognize(pin.image)
             if lines:
                 blocks = group_lines_to_blocks(lines, pin.width, pin.height)
@@ -146,6 +188,10 @@ class Pipeline:
                 pd.conf_avg = sum(l.conf for l in lines) / len(lines)
                 pd.text = "\n\n".join(p.text for p in paras)
                 pd.paras = [self._para_out(p, blocks) for p in paras]
+                pd.low_conf = [
+                    {"text": l.text, "box": [round(l.x0, 1), round(l.y0, 1), round(l.x1, 1), round(l.y1, 1)], "conf": round(l.conf, 3)}
+                    for l in lines if l.conf < self.LOW_CONF_THRESHOLD and l.text.strip()
+                ]
         if not self._coarse:
             self._process_regions(pd, pin)
         return pd

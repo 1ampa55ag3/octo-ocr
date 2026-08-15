@@ -114,6 +114,21 @@ SpellBlot.blotName = "spell";
 SpellBlot.tagName = "span";
 Quill.register({ "formats/spell": SpellBlot }, true);
 
+// 低置信标记（黄色高亮，点击定位原文）
+class LowConfBlot extends Inline {
+  static create(value) {
+    var node = super.create();
+    node.setAttribute("class", "low-conf");
+    return node;
+  }
+  static formats(node) {
+    return true;
+  }
+}
+LowConfBlot.blotName = "lowconf";
+LowConfBlot.tagName = "span";
+Quill.register({ "formats/lowconf": LowConfBlot }, true);
+
 // ---- 公式样式（居中斜体等宽）----
 class FormulaBlot extends Inline {
   static create() { return super.create(); }
@@ -512,8 +527,114 @@ function openProject(data, keepPage) {
   renderVersions();
   renderPage();
   listProjects();
+  applyLowConfMarks();
   if (!keepPage) showToast("已载入 " + data.pages.length + " 页，可在右侧编辑全文", "ok");
 }
+
+// ---- 低置信标记与图文对照（黄色高亮 / 段落点击定位原文）----
+function pageTextBounds() {
+  // 返回每页在编辑器纯文本中的 [start, end) 边界
+  var ops = quill.getContents().ops;
+  var bounds = [];
+  var pos = 0;
+  ops.forEach(function (op) {
+    if (typeof op.insert === "object" && op.insert && op.insert.mdunPage !== undefined) {
+      bounds.push(pos);
+    } else if (typeof op.insert === "string") {
+      pos += op.insert.length;
+    }
+  });
+  bounds.push(Infinity);
+  return bounds;
+}
+function applyLowConfMarks() {
+  if (!current || !current.pages) return;
+  var bounds = pageTextBounds();
+  var full = quill.getText();
+  current.pages.forEach(function (p, pi) {
+    if (!p.low_conf || !p.low_conf.length) return;
+    p.low_conf.forEach(function (lc) {
+      var t = (lc.text || "").trim();
+      if (t.length < 2) return;
+      var pos = full.indexOf(t, bounds[pi]);
+      if (pos < 0 || pos >= bounds[pi + 1]) return;
+      quill.formatText(pos, t.length, "lowconf", true, "silent");
+    });
+  });
+}
+var pendingFocus = null;   // {page, box:[x0,y0,x1,y1]}
+function drawFocusBox() {
+  if (!pendingFocus || !annotWrapEl) return;
+  var r = annotWrapEl.getBoundingClientRect();
+  var p = pendingFocus.pageData;
+  var w = p.width || r.width, h = p.height || r.height;
+  var b = pendingFocus.box;
+  var div = document.createElement("div");
+  div.className = "focus-box";
+  div.style.left = (b[0] / w * r.width) + "px";
+  div.style.top = (b[1] / h * r.height) + "px";
+  div.style.width = ((b[2] - b[0]) / w * r.width) + "px";
+  div.style.height = ((b[3] - b[1]) / h * r.height) + "px";
+  annotWrapEl.appendChild(div);
+  setTimeout(function () {
+    var fb = annotWrapEl && annotWrapEl.querySelector(".focus-box");
+    if (fb) fb.remove();
+  }, 5000);
+  pendingFocus = null;
+}
+function jumpToPageBox(pageIdx, box, label) {
+  if (!current || pageIdx >= current.pages.length) return;
+  pendingFocus = { page: pageIdx, box: box, pageData: current.pages[pageIdx] };
+  gotoPage(pageIdx);
+  setTimeout(drawFocusBox, 450);
+  if (label) showToast(label);
+}
+$("editorBox").addEventListener("click", function (e) {
+  var el = e.target && e.target.closest ? e.target.closest(".low-conf") : null;
+  if (el) {
+    var blot = Quill.find(el);
+    if (!blot) return;
+    var off = blot.offset();
+    var txt = quill.getText(off, blot.length()).trim();
+    var bounds = pageTextBounds();
+    var page = -1;
+    for (var i = 0; i < bounds.length - 1; i++) {
+      if (off >= bounds[i] && off < bounds[i + 1]) { page = i; break; }
+    }
+    if (page >= 0 && current.pages[page] && current.pages[page].low_conf) {
+      var lc = null;
+      current.pages[page].low_conf.forEach(function (x) { if (!lc && x.text.trim() === txt) lc = x; });
+      if (lc) jumpToPageBox(page, lc.box, "已定位到第 " + (page + 1) + " 页低置信原文");
+    }
+    return;
+  }
+  if (!linkMode) return;
+  var pEl = e.target && e.target.closest ? e.target.closest(".ql-editor p, .ql-editor h1, .ql-editor h2, .ql-editor h3") : null;
+  if (!pEl) return;
+  var lineBlot = Quill.find(pEl);
+  if (!lineBlot) return;
+  var off2 = lineBlot.offset();
+  var bounds2 = pageTextBounds();
+  var page2 = -1;
+  for (var j = 0; j < bounds2.length - 1; j++) {
+    if (off2 >= bounds2[j] && off2 < bounds2[j + 1]) { page2 = j; break; }
+  }
+  if (page2 < 0) return;
+  var lineText = quill.getText(off2, Math.max(0, lineBlot.length() - 1)).trim();
+  var hit = null;
+  (current.pages[page2].paras || []).forEach(function (para) {
+    if (!hit && para.box && (para.box[2] - para.box[0]) > 0 && (para.text || "").indexOf(lineText.slice(0, 10)) >= 0) hit = para;
+  });
+  if (hit) jumpToPageBox(page2, hit.box, "已定位到第 " + (page2 + 1) + " 页原文");
+  else { gotoPage(page2); showToast("已跳到第 " + (page2 + 1) + " 页（该段无原始坐标）"); }
+});
+var linkMode = false;
+$("btnLink").onclick = function () {
+  if (!current) { showToast("请先导入文件", "err"); return; }
+  linkMode = !linkMode;
+  $("btnLink").classList.toggle("active", linkMode);
+  showToast(linkMode ? "图文对照已开启：点击段落定位原文" : "图文对照已关闭");
+};
 
 // ---- 页面联动 ----
 function gotoPage(n) {
@@ -617,6 +738,37 @@ function rejectSuggestion(idx) {
 $("btnDiffClose").onclick = function () {
   $("diffPanel").classList.add("hidden");
 };
+
+// ---- 存档位置（项目持久化，支持用户指定文件夹）----
+function renderStoragePath() {
+  fetch("/api/storage", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (d.path) {
+        $("storagePath").textContent = d.path;
+        $("storagePath").title = d.path;
+      }
+    }).catch(function () {});
+}
+$("btnStorage").onclick = function () {
+  $("storageEdit").classList.toggle("hidden");
+  if (!$("storageEdit").classList.contains("hidden")) $("storageInput").value = $("storagePath").textContent;
+};
+$("btnStorageCancel").onclick = function () { $("storageEdit").classList.add("hidden"); };
+$("btnStorageSave").onclick = function () {
+  var p = $("storageInput").value.trim();
+  if (!p) { showToast("请输入完整的文件夹路径", "err"); return; }
+  fetch("/api/storage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: p }),
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) throw new Error(d.error);
+    $("storageEdit").classList.add("hidden");
+    renderStoragePath();
+    showToast("存档位置已改为：" + d.path + (d.moved ? "（迁移 " + d.moved + " 个项目）" : ""), "ok");
+  }).catch(function (e) { showToast("设置失败: " + e.message, "err"); });
+};
+renderStoragePath();
 
 // ---- 开源软件许可（任务栏底部入口，点击展示）----
 $("btnLicenses").onclick = function () {
@@ -758,20 +910,98 @@ $("btnUndoFix").onclick = function () {
   showToast("已撤销上一步");
 };
 
+// ---- 繁体转简体（opencc 本地词典）----
+$("btnT2S").onclick = function () {
+  if (!current) return;
+  var lines = collectLines().filter(function (l) { return !l.pageBreak && l.text.trim(); });
+  if (!lines.length) { showToast("没有可转换的文字"); return; }
+  pushVersion("繁转简前");
+  showToast("繁体转简体中…");
+  fetch("/api/t2s", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ texts: lines.map(function (l) { return l.text; }) }),
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) throw new Error(d.error);
+    var changed = 0;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      var l = lines[i];
+      var nt = d.texts[i] || l.text;
+      if (nt !== l.text) {
+        var fmts = quill.getFormat(l.offset, 1);
+        quill.deleteText(l.offset, l.length - 1);
+        quill.insertText(l.offset, nt, fmts);
+        changed++;
+      }
+    }
+    showToast("繁转简完成：" + changed + " 行有变化", changed ? "ok" : undefined);
+  }).catch(function (e) { showToast("繁转简失败: " + e.message, "err"); });
+};
+
 // ---- 导出：单按钮，点击弹出格式选择（保存编辑 → 导出）----
+// ---- 目录生成（标题 + 页码）----
+var tocOn = false;
+var HEAD_ANY_TOC = /^(?:[（(][一二三四五六七八九十]{1,3}[)）]|[一二三四五六七八九十]{1,3}、|\d{1,2}[.、]|第[一二三四五六七八九十\d]{1,4}[章节条款]|[①②③④⑤⑥⑦⑧⑨⑩])/;
+$("btnToc").onclick = function () {
+  if (!current) { showToast("请先导入文件", "err"); return; }
+  tocOn = !tocOn;
+  $("btnToc").classList.toggle("active", tocOn);
+  if (tocOn) {
+    var n = buildToc().length;
+    showToast("目录已开启：导出 Word 时自动生成（识别到 " + n + " 个标题）", n ? "ok" : undefined);
+  } else {
+    showToast("目录已关闭");
+  }
+};
+function buildToc() {
+  var out = [];
+  var page = 0;
+  var ops = quill.getContents().ops;
+  var buf = "";
+  function flush(attrs) {
+    var t = buf.trim();
+    buf = "";
+    if (!t) return;
+    var level = 0;
+    if (attrs && attrs.header) level = parseInt(attrs.header, 10) || 0;
+    else if (HEAD_ANY_TOC.test(t)) level = 2;
+    if (level > 0 && t.length <= 60) out.push({ level: level, text: t, page: page + 1 });
+  }
+  ops.forEach(function (op) {
+    if (typeof op.insert === "object" && op.insert && op.insert.mdunPage !== undefined) {
+      flush(null);
+      page = op.insert.mdunPage;
+      return;
+    }
+    if (typeof op.insert === "string") {
+      var parts = op.insert.split("\n");
+      for (var i = 0; i < parts.length; i++) {
+        if (i > 0) { flush(op.attributes); }
+        buf += parts[i];
+      }
+      return;
+    }
+    flush(null);
+  });
+  flush(null);
+  return out;
+}
+
 function doExport(fmt) {
   if (!current) { showToast("请先导入文件", "err"); return; }
   var ops = quill.getContents().ops;
+  var payload = { id: current.id, ops: ops };
+  if (fmt === "docx" && tocOn) payload.toc = buildToc();
   fetch("/api/save_edit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: current.id, ops: ops }),
+    body: JSON.stringify(payload),
   }).then(function (r) { return r.json(); }).then(function (s) {
     if (s.error) throw new Error(s.error);
     return fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: current.id, format: fmt }),
+      body: JSON.stringify({ id: current.id, format: fmt, toc: payload.toc || null }),
     }).then(function (r) { return r.json(); });
   }).then(function (d) {
     if (d.file) {

@@ -5,10 +5,13 @@
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
+
+log = logging.getLogger("mdun.ocr")
 
 from mdun.postprocess.paragraph import Line
 
@@ -76,6 +79,40 @@ class OcrEngine:
         keys_file.write_text("\n".join(chars), encoding="utf-8")
         return keys_file
 
+    def _apply_coreml(self) -> bool:
+        """Apple Silicon 上把 det/cls/rec 会话切换为 CoreML EP（失败自动回退 CPU）。"""
+        import os
+        import platform
+
+        # 实测：PP-OCRv5 小模型上 CoreML EP 因调度开销反而更慢（CPU 0.31s vs CoreML 1.62s/页），
+        # 故默认关闭；设 MDUN_COREML=1 显式开启，供后续模型/EP 版本优化后使用
+        if os.environ.get("MDUN_COREML") != "1":
+            return False
+        if platform.system() != "Darwin" or platform.machine() != "arm64":
+            return False
+        try:
+            from onnxruntime import InferenceSession
+
+            # RapidOCR 的包装器（OrtInferSession）内部持有原生 onnxruntime 会话
+            # （det/cls 为 .infer.session，rec 为 .session.session），替换原生会话即可换 EP
+            targets = [
+                (self._engine.text_det.infer, "ppocrv5_mobile_det.onnx"),
+                (self._engine.text_cls.infer, "ppocrv4_mobile_cls.onnx"),
+                (self._engine.text_rec.session, "ppocrv5_mobile_rec.onnx"),
+            ]
+            ok = 0
+            for holder, fname in targets:
+                p = self.models_dir / fname
+                if not p.exists() or not hasattr(holder, "session"):
+                    continue
+                holder.session = InferenceSession(
+                    str(p), providers=["CoreMLExecutionProvider", "CPUExecutionProvider"]
+                )
+                ok += 1
+            return ok >= 2
+        except Exception:  # noqa: BLE001
+            return False
+
     def _load_rapidocr(self) -> None:
         from rapidocr_onnxruntime import RapidOCR
 
@@ -114,6 +151,9 @@ class OcrEngine:
             )
         self._engine = RapidOCR(**kwargs)
         self._model_note = "PP-OCRv5(ONNX)" if (det and rec) else "PP-OCRv4(内置)"
+        if self._apply_coreml():
+            self._model_note += " (CoreML)"
+            log.info("已启用 Apple Silicon CoreML 加速（首次推理需编译模型，稍慢属正常）")
 
     @property
     def model_note(self) -> str:
