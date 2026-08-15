@@ -562,13 +562,16 @@ function applyLowConfMarks() {
     });
   });
 }
-var pendingFocus = null;   // {page, box:[x0,y0,x1,y1]}
+var focusData = null;   // {page, box:[x0,y0,x1,y1]}（持久保存，缩放/切页后仍可重绘）
+var focusTimer = null;
 function drawFocusBox() {
-  if (!pendingFocus || !annotWrapEl) return;
+  if (!annotWrapEl) return;
+  annotWrapEl.querySelectorAll(".focus-box").forEach(function (n) { n.remove(); });
+  if (!focusData || focusData.page !== pageIdx) return;
   var r = annotWrapEl.getBoundingClientRect();
-  var p = pendingFocus.pageData;
-  var w = p.width || r.width, h = p.height || r.height;
-  var b = pendingFocus.box;
+  var p = current && current.pages[pageIdx];
+  var w = (p && p.width) || r.width, h = (p && p.height) || r.height;
+  var b = focusData.box;
   var div = document.createElement("div");
   div.className = "focus-box";
   div.style.left = (b[0] / w * r.width) + "px";
@@ -576,16 +579,18 @@ function drawFocusBox() {
   div.style.width = ((b[2] - b[0]) / w * r.width) + "px";
   div.style.height = ((b[3] - b[1]) / h * r.height) + "px";
   annotWrapEl.appendChild(div);
-  setTimeout(function () {
-    var fb = annotWrapEl && annotWrapEl.querySelector(".focus-box");
-    if (fb) fb.remove();
-  }, 5000);
-  pendingFocus = null;
 }
+var sealLayerOn = true;
+$("btnSealLayer").onclick = function () {
+  sealLayerOn = !sealLayerOn;
+  $("btnSealLayer").classList.toggle("active", sealLayerOn);
+  renderSealBoxes();
+  showToast(sealLayerOn ? "印章图层已显示" : "印章图层已隐藏");
+};
 function renderSealBoxes() {
   if (!annotWrapEl) return;
   annotWrapEl.querySelectorAll(".seal-box").forEach(function (n) { n.remove(); });
-  if (!annotMode || !current || !current.pages[pageIdx] || !current.pages[pageIdx].seals) return;
+  if (!sealLayerOn || !current || !current.pages[pageIdx] || !current.pages[pageIdx].seals) return;
   var p = current.pages[pageIdx];
   var r = annotWrapEl.getBoundingClientRect();
   var w = p.width || r.width, h = p.height || r.height;
@@ -606,8 +611,14 @@ function renderSealBoxes() {
 }
 function jumpToPageBox(pageIdx, box, label) {
   if (!current || pageIdx >= current.pages.length) return;
-  pendingFocus = { page: pageIdx, box: box, pageData: current.pages[pageIdx] };
+  focusData = { page: pageIdx, box: box };
   gotoPage(pageIdx);
+  drawFocusBox();
+  if (focusTimer) clearTimeout(focusTimer);
+  focusTimer = setTimeout(function () {
+    focusData = null;
+    drawFocusBox();
+  }, 8000);
   if (label) showToast(label);
 }
 $("editorBox").addEventListener("click", function (e) {
@@ -1412,7 +1423,7 @@ function renderPage() {
   if (!current) return;
   var p = current.pages[pageIdx];
   $("pageNo").textContent = (pageIdx + 1) + " / " + current.pages.length;
-  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-") + ((p.seals && p.seals.length) ? " · 印章 " + p.seals.length : "");
+  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-") + ((p.seals && p.seals.length) ? " · 印章 " + p.seals.length + " 处" : "");
   var wrap = document.createElement("div");
   wrap.className = "img-wrap";
   var img = document.createElement("img");
@@ -1617,6 +1628,8 @@ function applyZoom() {
   }
   $("zoomPct").textContent = Math.round(zoomScale * 100) + "%";
   renderAnnotBoxes();
+  renderSealBoxes();
+  drawFocusBox();
 }
 function setZoom(s) {
   zoomScale = Math.max(0.3, Math.min(4, s));

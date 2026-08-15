@@ -267,7 +267,7 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 .ap-actions button:hover { filter: brightness(1.08); }
 .ap-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .ap-actions .icn { width: 12px; height: 12px; }
-.viewer-bar button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--input-bg)); }
+.viewer-bar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 /* 框角局部识别浮钮（挂在最后一个标注框右上角） */
 .anno-chip { position: absolute; z-index: 4; height: 24px; padding: 0 8px; font-size: 12px; background: var(--panel); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px var(--shadow); white-space: nowrap; }
 .anno-chip:hover { background: var(--accent); color: #fff; }
