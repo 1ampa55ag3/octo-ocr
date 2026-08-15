@@ -582,11 +582,32 @@ function drawFocusBox() {
   }, 5000);
   pendingFocus = null;
 }
+function renderSealBoxes() {
+  if (!annotWrapEl) return;
+  annotWrapEl.querySelectorAll(".seal-box").forEach(function (n) { n.remove(); });
+  if (!annotMode || !current || !current.pages[pageIdx] || !current.pages[pageIdx].seals) return;
+  var p = current.pages[pageIdx];
+  var r = annotWrapEl.getBoundingClientRect();
+  var w = p.width || r.width, h = p.height || r.height;
+  p.seals.forEach(function (s) {
+    var b = s.box;
+    var div = document.createElement("div");
+    div.className = "seal-box";
+    div.style.left = (b[0] / w * r.width) + "px";
+    div.style.top = (b[1] / h * r.height) + "px";
+    div.style.width = ((b[2] - b[0]) / w * r.width) + "px";
+    div.style.height = ((b[3] - b[1]) / h * r.height) + "px";
+    var lab = document.createElement("span");
+    lab.className = "seal-label";
+    lab.textContent = "印章";
+    div.appendChild(lab);
+    annotWrapEl.appendChild(div);
+  });
+}
 function jumpToPageBox(pageIdx, box, label) {
   if (!current || pageIdx >= current.pages.length) return;
   pendingFocus = { page: pageIdx, box: box, pageData: current.pages[pageIdx] };
   gotoPage(pageIdx);
-  setTimeout(drawFocusBox, 450);
   if (label) showToast(label);
 }
 $("editorBox").addEventListener("click", function (e) {
@@ -633,7 +654,8 @@ $("btnLink").onclick = function () {
   if (!current) { showToast("请先导入文件", "err"); return; }
   linkMode = !linkMode;
   $("btnLink").classList.toggle("active", linkMode);
-  showToast(linkMode ? "图文对照已开启：点击段落定位原文" : "图文对照已关闭");
+  $("editorBox").classList.toggle("link-mode", linkMode);
+  showToast(linkMode ? "图文对照已开启：鼠标移到段落会有提示框，点击定位到原文" : "图文对照已关闭");
 };
 
 // ---- 页面联动 ----
@@ -754,9 +776,7 @@ $("btnStorage").onclick = function () {
   if (!$("storageEdit").classList.contains("hidden")) $("storageInput").value = $("storagePath").textContent;
 };
 $("btnStorageCancel").onclick = function () { $("storageEdit").classList.add("hidden"); };
-$("btnStorageSave").onclick = function () {
-  var p = $("storageInput").value.trim();
-  if (!p) { showToast("请输入完整的文件夹路径", "err"); return; }
+function applyStoragePath(p) {
   fetch("/api/storage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -767,6 +787,21 @@ $("btnStorageSave").onclick = function () {
     renderStoragePath();
     showToast("存档位置已改为：" + d.path + (d.moved ? "（迁移 " + d.moved + " 个项目）" : ""), "ok");
   }).catch(function (e) { showToast("设置失败: " + e.message, "err"); });
+}
+$("btnStorageSave").onclick = function () {
+  var p = $("storageInput").value.trim();
+  if (!p) { showToast("请输入或选择文件夹", "err"); return; }
+  applyStoragePath(p);
+};
+$("btnStoragePick").onclick = function () {
+  showToast("正在打开系统文件夹选择框…");
+  fetch("/api/pick_folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (d.error) throw new Error(d.error);
+      if (d.canceled) { showToast("已取消选择"); return; }
+      $("storageInput").value = d.path;
+      applyStoragePath(d.path);
+    }).catch(function (e) { showToast("选择文件夹失败: " + e.message, "err"); });
 };
 renderStoragePath();
 
@@ -1377,7 +1412,7 @@ function renderPage() {
   if (!current) return;
   var p = current.pages[pageIdx];
   $("pageNo").textContent = (pageIdx + 1) + " / " + current.pages.length;
-  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-");
+  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-") + ((p.seals && p.seals.length) ? " · 印章 " + p.seals.length : "");
   var wrap = document.createElement("div");
   wrap.className = "img-wrap";
   var img = document.createElement("img");
@@ -1401,8 +1436,10 @@ function renderPage() {
   img.onload = function () {
     applyZoom();
     if (pendingFit) { pendingFit = false; $("btnZoomFit").onclick(); }
+    drawFocusBox();
+    renderSealBoxes();
   };
-  if (img.complete && img.naturalWidth) { applyZoom(); renderAnnotBoxes(); }
+  if (img.complete && img.naturalWidth) { applyZoom(); renderAnnotBoxes(); drawFocusBox(); renderSealBoxes(); }
 }
 var annotLayerEl = null, annotWrapEl = null;
 // ---- 预览页防截图水印：口号 + 时间戳 + 页码，平铺斜纹覆盖整页 ----

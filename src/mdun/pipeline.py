@@ -142,30 +142,33 @@ class Pipeline:
         """红色圆形印章检测：检出的印章区域涂白，OCR 不再读取（红头文字条状、低圆度，不受影响）。"""
         import cv2
 
+        img = np.array(img, copy=True)  # PIL asarray 为只读视图，需可写副本
         h, w = img.shape[:2]
-        b = img[..., 0].astype(int)
+        # 管线图像统一 RGB（PIL convert("RGB") / pymupdf pixmap）
+        r = img[..., 0].astype(int)
         g = img[..., 1].astype(int)
-        r = img[..., 2].astype(int)   # OpenCV BGR：红色在第 2 通道
-        red = ((r - np.maximum(g, b)) > 50) & (r > 110)
+        b = img[..., 2].astype(int)
+        red = ((r - np.maximum(g, b)) > 40) & (r > 100)
         mask = (red.astype(np.uint8)) * 255
         if int(mask.sum()) == 0:
             return img, []
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        # 大核闭运算：把章环与环内文字连成整体，环形公章也能检出
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8), iterations=2)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         seals = []
         for c in contours:
             x, y, cw, ch = cv2.boundingRect(c)
             area = float(cv2.contourArea(c))
-            if not (300 <= area <= 500_000):
+            if not (200 <= area <= 500_000):
                 continue
             if cw < 16 or ch < 16:
                 continue
-            if max(cw, ch) / max(1, min(cw, ch)) > 1.6:   # 条状红字（红头标题/文号）排除
+            if max(cw, ch) / max(1, min(cw, ch)) > 2.0:   # 条状红字（红头标题/文号）排除
                 continue
             per = cv2.arcLength(c, True)
             circ = 4 * 3.14159 * area / max(1.0, per * per)   # 圆度
             fill = float(cv2.countNonZero(mask[y:y + ch, x:x + cw])) / max(1.0, float(cw * ch))
-            if circ < 0.40 or fill < 0.30:
+            if circ < 0.35 or fill < 0.15:
                 continue
             seals.append({"box": [int(x), int(y), int(x + cw), int(y + ch)], "conf": round(min(1.0, circ), 3)})
             img[y:y + ch, x:x + cw] = 255

@@ -171,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_reprocess()
         if url.path == "/api/delete":
             return self._handle_delete()
+        if url.path == "/api/pick_folder":
+            return self._handle_pick_folder()
         if url.path == "/api/t2s":
             return self._handle_t2s()
         if url.path == "/api/storage":
@@ -719,6 +721,38 @@ class Handler(BaseHTTPRequestHandler):
             "tables": len(tables),
             "formulas": len(formulas),
         })
+
+    # ---- 原生文件夹选择对话框（存档位置用）----
+    def _handle_pick_folder(self) -> None:
+        import subprocess
+        import sys
+
+        picked = None
+        try:
+            if sys.platform == "darwin":
+                script = 'POSIX path of (choose folder with prompt "选择存档文件夹")'
+                out = subprocess.run(
+                    ["osascript", "-e", script], capture_output=True, text=True, timeout=600
+                )
+                picked = out.stdout.strip().rstrip(":/")
+            elif sys.platform.startswith("win"):
+                ps = (
+                    "Add-Type -AssemblyName System.Windows.Forms;"
+                    "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
+                    '$d.Description = "选择存档文件夹";'
+                    'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }'
+                )
+                out = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=600
+                )
+                picked = out.stdout.strip().rstrip("\\/")
+            else:
+                return self._json({"error": "此系统请直接输入路径"}, 400)
+        except Exception as e:  # noqa: BLE001
+            return self._json({"error": f"无法打开选择对话框: {e}"}, 500)
+        if not picked:
+            return self._json({"path": None, "canceled": True})
+        return self._json({"path": picked})
 
     # ---- 存档位置（项目持久化目录，用户可指定）----
     def _handle_storage(self) -> None:
