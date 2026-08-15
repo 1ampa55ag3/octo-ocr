@@ -9,7 +9,7 @@
 ![完全离线](https://img.shields.io/badge/%E5%AE%8C%E5%85%A8%E7%A6%BB%E7%BA%BF%C2%B7%E9%9B%B6%E7%BD%91%E7%BB%9C-%E5%AE%8C%E5%85%A8%E7%A6%BB%E7%BA%BF%C2%B7%E9%9B%B6%E7%BD%91%E7%BB%9C-0066cc)
 ![数据不出本机](https://img.shields.io/badge/%E6%95%B0%E6%8D%AE%E4%B8%8D%E5%87%BA%E6%9C%AC%E6%9C%BA-%E6%95%B0%E6%8D%AE%E4%B8%8D%E5%87%BA%E6%9C%AC%E6%9C%BA-1d1d1f)
 ![断网也能用](https://img.shields.io/badge/%E6%96%AD%E7%BD%91%E4%B9%9F%E8%83%BD%E7%94%A8-%E6%96%AD%E7%BD%91%E4%B9%9F%E8%83%BD%E7%94%A8-d70015)
-![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-v0.23.1-0066cc)
+![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-v0.23.2-0066cc)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB)
 ![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-macOS%20%2F%20Windows%20%2F%20Linux-1d1d1f)
 ![许可](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF-Apache--2.0-brightgreen)

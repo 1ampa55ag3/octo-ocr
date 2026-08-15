@@ -14,7 +14,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><img class="logo" src="/static/logo.png" alt="OctoOCR-offline"> OctoOCR-offline <span class="ver">v0.23.1</span> <span class="slogan">涉密不上网 · 上网不涉密</span></div>
+  <div class="brand"><img class="logo" src="/static/logo.png" alt="OctoOCR-offline"> OctoOCR-offline <span class="ver">v0.23.2</span> <span class="slogan">涉密不上网 · 上网不涉密</span></div>
   <div class="mid" id="jobBox">
     <div id="jobStatus" class="job-status hidden"></div>
     <div class="progress hidden" id="progressBar"><div id="progressFill"></div></div>
@@ -28,13 +28,32 @@
   <aside id="projectList">
     <div class="side-head">
       <span class="side-title">任务</span>
-      <button id="btnCollapseSide" class="collapse-btn" title="收纳/展开任务栏"><span class="icn" data-icon="chevrons-left"></span></button>
+      <span class="side-head-actions">
+        <button id="btnTaskSel" class="head-btn" title="批量选择任务（也可按住 ⌘/Ctrl 点击任务卡）">选择</button>
+        <button id="btnCollapseSide" class="collapse-btn" title="收纳/展开任务栏"><span class="icn" data-icon="chevrons-left"></span></button>
+      </span>
     </div>
     <label class="btn primary import-btn"><span class="icn" data-icon="upload"></span> 导入文件（PDF/图片）
       <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" hidden>
     </label>
+    <div class="task-search">
+      <span class="icn ts-icn" data-icon="search"></span>
+      <input id="taskSearchInput" type="text" placeholder="搜索任务…" autocomplete="off" spellcheck="false">
+      <button id="btnTaskSearchClear" class="ts-clear hidden" title="清除搜索（Esc）"><span class="icn" data-icon="x"></span></button>
+    </div>
     <div id="projects"></div>
+    <div class="hint hidden" id="taskNoMatch"><span>没有匹配的任务</span><button id="btnTaskNoMatchClear" class="hint-act">清除搜索</button></div>
     <div class="hint" id="emptyHint">拖拽文件到窗口 / 粘贴 (⌘V)</div>
+    <div id="taskSelBar" class="sel-bar hidden">
+      <div class="sel-row">
+        <span class="sel-count" id="taskSelCount">已选 0 个</span>
+        <button id="btnTaskSelAll" class="sel-btn" disabled>全选</button>
+      </div>
+      <div class="sel-row">
+        <button id="btnTaskDel" class="sel-btn danger wide" disabled>删除</button>
+        <button id="btnTaskSelCancel" class="sel-btn wide">取消</button>
+      </div>
+    </div>
     <div class="side-foot">
       <div class="side-storage">
         <div class="ss-row">

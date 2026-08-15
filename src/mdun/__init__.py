@@ -3,6 +3,6 @@
 核心原则：零网络依赖、零遥测、可断网审计。
 """
 
-__version__ = "0.23.1"
+__version__ = "0.23.2"
 __product__ = "OctoOCR-offline"
 __codename__ = "mdun"

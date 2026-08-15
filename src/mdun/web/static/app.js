@@ -322,70 +322,11 @@ function pollJob(jobId) {
     });
 }
 
-// ---- 项目列表 ----
+// ---- 项目列表（数据加载；渲染见「任务区：搜索与批量选择」模块）----
 function listProjects() {
   fetch("/api/list").then(function (r) { return r.json(); }).then(function (items) {
-    var box = $("projects");
-    box.innerHTML = "";
-    $("emptyHint").classList.toggle("hidden", items.length > 0);
-    items.forEach(function (it) {
-      var div = document.createElement("div");
-      div.className = "proj" + (current && it.id === current.id ? " active" : "");
-      var name = document.createElement("span");
-      name.className = "p-name";
-      name.textContent = it.source;
-      name.title = it.source;
-      var pages = document.createElement("span");
-      pages.className = "p-pages";
-      pages.textContent = it.pages + " 页";
-      var re = document.createElement("span");
-      re.className = "p-act";
-      re.title = "重新识别（全文高精度）";
-      re.innerHTML = '<span class="icn">' + ICONS["scan-text"] + "</span>";
-      re.onclick = function (e) {
-        e.stopPropagation();
-        $("jobStatus").textContent = "重新识别排队中…";
-        $("jobStatus").classList.remove("hidden");
-        $("progressBar").classList.remove("hidden");
-        fetch("/api/reprocess", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: it.id }),
-        }).then(function (r) { return r.json(); }).then(function (d) {
-          if (d.error) throw new Error(d.error);
-          pollJob(d.job_id);
-        }).catch(function (err) {
-          $("jobStatus").classList.add("hidden");
-          $("progressBar").classList.add("hidden");
-          showToast("重新识别失败: " + err.message, "err");
-        });
-      };
-      var del = document.createElement("span");
-      del.className = "p-del";
-      del.title = "删除任务";
-      del.innerHTML = '<span class="icn">' + ICONS["x"] + "</span>";
-      del.onclick = function (e) {
-        e.stopPropagation();
-        if (!window.confirm("删除任务 " + it.source + " ？")) return;
-        fetch("/api/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: it.id }),
-        }).then(function () {
-          if (current && current.id === it.id) { current = null; quill.setContents([]); $("imageBox").innerHTML = '<div class="placeholder">导入文件后在此预览原图</div>'; }
-          listProjects();
-          showToast("任务已删除");
-        });
-      };
-      div.appendChild(name);
-      div.appendChild(pages);
-      div.appendChild(re);
-      div.appendChild(del);
-      div.onclick = function () {
-        fetch("/api/project/" + it.id).then(function (r) { return r.json(); }).then(openProject);
-      };
-      box.appendChild(div);
-    });
+    taskAll = items;
+    renderTaskList();
   });
 }
 
@@ -493,6 +434,14 @@ $("btnBackFull").onclick = function () {
 function openProject(data, keepPage) {
   current = data;
   linkFocus = null; linkHover = null; linkHoverLine = null; lastEditorLinkKey = "";
+  // 打开的任务若不在当前搜索过滤内，自动清除搜索，保证卡片可见
+  // 注意：比对列表显示名（filename），data.source 是上传临时路径
+  var dispName = (data && (data.filename || String(data.source || "").split(/[\\\/]/).pop()) || "").toLowerCase();
+  if (taskQuery && dispName.indexOf(taskQuery.toLowerCase()) < 0) {
+    taskQuery = "";
+    var si = $("taskSearchInput");
+    if (si) si.value = "";
+  }
   if (!keepPage || !data.pages || pageIdx >= data.pages.length) pageIdx = 0;
   var ops = [];
   (data.pages || []).forEach(function (p, i) {
@@ -1895,3 +1844,223 @@ $("btnReprocess").onclick = function () {
     pollJob(d.job_id);
   }).catch(function (e) { showToast("全文识别失败: " + e.message, "err"); });
 };
+// ---- 任务区：搜索与批量选择删除 ----
+var taskAll = [];            // 全部任务
+var taskQuery = "";          // 搜索词（按文件名过滤）
+var taskSelMode = false;     // 批量选择模式
+var taskSelected = {};       // 选中任务 id -> true
+var taskSearchTimer = null;
+
+function visibleTaskItems() {
+  var q = taskQuery.trim().toLowerCase();
+  if (!q) return taskAll;
+  return taskAll.filter(function (it) {
+    return (it.source || "").toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+function taskNameEl(it, q) {
+  var name = document.createElement("span");
+  name.className = "p-name";
+  var src = it.source || "";
+  name.title = src;
+  var idx = q ? src.toLowerCase().indexOf(q) : -1;
+  if (q && idx >= 0) {
+    name.appendChild(document.createTextNode(src.slice(0, idx)));
+    var m = document.createElement("mark");
+    m.className = "hl";
+    m.textContent = src.slice(idx, idx + q.length);
+    name.appendChild(m);
+    name.appendChild(document.createTextNode(src.slice(idx + q.length)));
+  } else {
+    name.textContent = src;
+  }
+  return name;
+}
+
+function buildTaskCard(it, q) {
+  var div = document.createElement("div");
+  div.className = "proj"
+    + (current && it.id === current.id ? " active" : "")
+    + (taskSelected[it.id] ? " checked" : "");
+  var check = document.createElement("span");
+  check.className = "p-check";
+  if (taskSelected[it.id]) {
+    check.innerHTML = '<span class="icn">' + ICONS["check"] + "</span>";
+  }
+  div.appendChild(check);
+  div.appendChild(taskNameEl(it, q));
+  var pages = document.createElement("span");
+  pages.className = "p-pages";
+  pages.textContent = it.pages + " 页";
+  var re = document.createElement("span");
+  re.className = "p-act";
+  re.title = "重新识别（全文高精度）";
+  re.innerHTML = '<span class="icn">' + ICONS["scan-text"] + "</span>";
+  re.onclick = function (e) {
+    e.stopPropagation();
+    $("jobStatus").textContent = "重新识别排队中…";
+    $("jobStatus").classList.remove("hidden");
+    $("progressBar").classList.remove("hidden");
+    fetch("/api/reprocess", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: it.id }),
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.error) throw new Error(d.error);
+      pollJob(d.job_id);
+    }).catch(function (err) {
+      $("jobStatus").classList.add("hidden");
+      $("progressBar").classList.add("hidden");
+      showToast("重新识别失败: " + err.message, "err");
+    });
+  };
+  var del = document.createElement("span");
+  del.className = "p-del";
+  del.title = "删除任务";
+  del.innerHTML = '<span class="icn">' + ICONS["x"] + "</span>";
+  del.onclick = function (e) {
+    e.stopPropagation();
+    if (!window.confirm("删除任务 " + it.source + " ？")) return;
+    fetch("/api/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: it.id }),
+    }).then(function () {
+      if (current && current.id === it.id) { current = null; quill.setContents([]); $("imageBox").innerHTML = '<div class="placeholder">导入文件后在此预览原图</div>'; }
+      listProjects();
+      showToast("任务已删除");
+    });
+  };
+  div.appendChild(pages);
+  div.appendChild(re);
+  div.appendChild(del);
+  div.onclick = function (e) {
+    var meta = e.metaKey || e.ctrlKey;
+    if (taskSelMode || meta) {
+      e.preventDefault();
+      toggleTaskSelect(it.id);
+      return;
+    }
+    fetch("/api/project/" + it.id).then(function (r) { return r.json(); }).then(openProject);
+  };
+  return div;
+}
+
+function renderTaskList() {
+  var box = $("projects");
+  var q = taskQuery.trim().toLowerCase();
+  var visible = visibleTaskItems();
+  box.innerHTML = "";
+  box.classList.toggle("sel-mode", taskSelMode);
+  $("emptyHint").classList.toggle("hidden", taskAll.length > 0);
+  $("taskNoMatch").classList.toggle("hidden", !(taskAll.length > 0 && visible.length === 0 && q));
+  visible.forEach(function (it) { box.appendChild(buildTaskCard(it, q)); });
+  renderTaskSearchState();
+  renderTaskSelBar();
+}
+
+function renderTaskSearchState() {
+  var inp = $("taskSearchInput");
+  $("btnTaskSearchClear").classList.toggle("hidden", !(inp && inp.value));
+}
+
+function renderTaskSelBar() {
+  var n = Object.keys(taskSelected).length;
+  $("taskSelBar").classList.toggle("hidden", !taskSelMode);
+  $("btnTaskSel").classList.toggle("active", taskSelMode);
+  $("taskSelCount").textContent = "已选 " + n + " 个";
+  var vis = visibleTaskItems();
+  var allOn = vis.length > 0 && vis.every(function (it) { return taskSelected[it.id]; });
+  $("btnTaskSelAll").textContent = allOn ? "取消全选" : "全选";
+  $("btnTaskSelAll").disabled = vis.length === 0;
+  var del = $("btnTaskDel");
+  del.disabled = n === 0;
+  del.textContent = n > 0 ? "删除（" + n + "）" : "删除";
+}
+
+function toggleTaskSelect(id) {
+  if (taskSelected[id]) delete taskSelected[id];
+  else taskSelected[id] = true;
+  // 进入/保持选择模式；退出交给「取消」/Esc/删除完成
+  taskSelMode = true;
+  renderTaskList();
+}
+
+function exitTaskSel() {
+  taskSelMode = false;
+  taskSelected = {};
+  renderTaskList();
+}
+
+function clearTaskSearch(focus) {
+  taskQuery = "";
+  var inp = $("taskSearchInput");
+  if (inp) inp.value = "";
+  renderTaskList();
+  if (focus && inp) inp.focus();
+}
+
+$("btnTaskSel").onclick = function () {
+  if (!taskAll.length) { showToast("暂无任务", "err"); return; }
+  taskSelMode = !taskSelMode;
+  if (!taskSelMode) taskSelected = {};
+  renderTaskList();
+};
+
+$("btnTaskSelCancel").onclick = function () { exitTaskSel(); };
+
+$("btnTaskSelAll").onclick = function () {
+  var vis = visibleTaskItems();
+  var allOn = vis.length > 0 && vis.every(function (it) { return taskSelected[it.id]; });
+  vis.forEach(function (it) {
+    if (allOn) delete taskSelected[it.id];
+    else taskSelected[it.id] = true;
+  });
+  taskSelMode = true;   // 全选/取消全选不退出选择模式
+  renderTaskList();
+};
+
+$("btnTaskDel").onclick = function () {
+  var ids = Object.keys(taskSelected);
+  if (!ids.length) return;
+  if (!window.confirm("删除选中的 " + ids.length + " 个任务？此操作不可恢复。")) return;
+  var removedCurrent = current && taskSelected[current.id];
+  fetch("/api/delete_many", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: ids }),
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) throw new Error(d.error);
+    if (removedCurrent) {
+      current = null;
+      quill.setContents([]);
+      $("imageBox").innerHTML = '<div class="placeholder">导入文件后在此预览原图</div>';
+    }
+    taskSelected = {};
+    taskSelMode = false;
+    listProjects();
+    showToast("已删除 " + d.deleted + " 个任务", "ok");
+  }).catch(function (e) { showToast("批量删除失败: " + e.message, "err"); });
+};
+
+$("taskSearchInput").addEventListener("input", function () {
+  var v = $("taskSearchInput").value;
+  renderTaskSearchState();
+  clearTimeout(taskSearchTimer);
+  taskSearchTimer = setTimeout(function () {
+    if (taskQuery === v) return;
+    taskQuery = v;
+    renderTaskList();
+  }, 90);
+});
+
+$("btnTaskSearchClear").onclick = function () { clearTaskSearch(true); };
+$("btnTaskNoMatchClear").onclick = function () { clearTaskSearch(true); };
+
+document.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  if (taskSelMode) { exitTaskSel(); return; }
+  if ($("taskSearchInput").value) clearTaskSearch(false);
+});
+

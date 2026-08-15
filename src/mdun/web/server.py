@@ -81,6 +81,25 @@ def _save_project(proj_id: str) -> None:
         tmp = d / f"{proj_id}.json.tmp"
         tmp.write_text(json.dumps(proj, ensure_ascii=False), encoding="utf-8")
         tmp.replace(d / f"{proj_id}.json")
+
+
+def _delete_project(proj_id: str | None) -> bool:
+    """删除单个项目（内存/存档文件/页面缓存），供单个与批量删除共用。"""
+    if not proj_id:
+        return False
+    with _store_lock:
+        proj = _store.pop(proj_id, None)
+    if proj is None:
+        return False
+    import shutil
+
+    cache = Path(_settings.data_dir) / PAGE_CACHE_DIRNAME / proj_id
+    shutil.rmtree(cache, ignore_errors=True)
+    try:
+        (_resolve_store_dir() / f"{proj_id}.json").unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 _worker = None
@@ -171,6 +190,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_reprocess()
         if url.path == "/api/delete":
             return self._handle_delete()
+        if url.path == "/api/delete_many":
+            return self._handle_delete_many()
         if url.path == "/api/pick_folder":
             return self._handle_pick_folder()
         if url.path == "/api/t2s":
@@ -563,20 +584,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_delete(self) -> None:
         req = self._read_json()
-        proj_id = req.get("id")
-        with _store_lock:
-            proj = _store.pop(proj_id, None)
-        if proj is None:
+        if not _delete_project(req.get("id")):
             return self._json({"error": "not found"}, 404)
-        import shutil
-
-        cache = Path(_settings.data_dir) / PAGE_CACHE_DIRNAME / proj_id
-        shutil.rmtree(cache, ignore_errors=True)
-        try:
-            (_resolve_store_dir() / f"{proj_id}.json").unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
-            pass
         return self._json({"deleted": True})
+
+    # ---- 批量删除（任务区多选）----
+    def _handle_delete_many(self) -> None:
+        req = self._read_json()
+        ids = [str(i) for i in (req.get("ids") or [])][:500]
+        deleted = sum(1 for pid in ids if _delete_project(pid))
+        return self._json({"deleted": deleted})
 
     # ---- 拼写检查 ----
     def _handle_spellcheck(self) -> None:
