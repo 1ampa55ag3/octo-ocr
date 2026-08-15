@@ -42,3 +42,9 @@ Thumbs.db
 tests/
 scripts/gen_test_images.py
 scripts/gen_region_samples.py
+
+# ---- 开发者工具与内部文档（不随仓库分发）----
+scripts/gen_vendor_keys.py
+vendor_public.pem
+docs/*
+!docs/CHANGELOG.md
