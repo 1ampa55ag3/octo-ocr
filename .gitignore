@@ -48,3 +48,4 @@ scripts/gen_vendor_keys.py
 vendor_public.pem
 docs/*
 !docs/CHANGELOG.md
+storage.json
