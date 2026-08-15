@@ -531,7 +531,7 @@ function openProject(data, keepPage) {
   if (!keepPage) showToast("已载入 " + data.pages.length + " 页，可在右侧编辑全文", "ok");
 }
 
-// ---- 低置信标记与图文对照（黄色高亮 / 段落点击定位原文）----
+// ---- 低置信标记（黄色高亮）----
 function pageTextBounds() {
   // 返回每页在编辑器纯文本中的 [start, end) 边界
   var ops = quill.getContents().ops;
@@ -562,146 +562,6 @@ function applyLowConfMarks() {
     });
   });
 }
-var focusData = null;   // {page, box:[x0,y0,x1,y1]}（持久保存，缩放/切页后仍可重绘）
-var focusTimer = null;
-function drawFocusBox() {
-  if (!annotWrapEl) return;
-  annotWrapEl.querySelectorAll(".focus-box").forEach(function (n) { n.remove(); });
-  if (!focusData || focusData.page !== pageIdx) return;
-  var r = annotWrapEl.getBoundingClientRect();
-  var p = current && current.pages[pageIdx];
-  var w = (p && p.width) || r.width, h = (p && p.height) || r.height;
-  var b = focusData.box;
-  var fx0 = Math.max(0, Math.min(1, b[0] / w)), fy0 = Math.max(0, Math.min(1, b[1] / h));
-  var fx1 = Math.max(fx0, Math.min(1, b[2] / w)), fy1 = Math.max(fy0, Math.min(1, b[3] / h));
-  var div = document.createElement("div");
-  div.className = "focus-box";
-  div.style.left = (fx0 * r.width) + "px";
-  div.style.top = (fy0 * r.height) + "px";
-  div.style.width = ((fx1 - fx0) * r.width) + "px";
-  div.style.height = ((fy1 - fy0) * r.height) + "px";
-  annotWrapEl.appendChild(div);
-}
-var sealLayerOn = true;
-$("btnSealLayer").onclick = function () {
-  sealLayerOn = !sealLayerOn;
-  $("btnSealLayer").classList.toggle("active", sealLayerOn);
-  renderSealBoxes();
-  showToast(sealLayerOn ? "印章图层已显示" : "印章图层已隐藏");
-};
-function renderSealBoxes() {
-  if (!annotWrapEl) return;
-  annotWrapEl.querySelectorAll(".seal-box").forEach(function (n) { n.remove(); });
-  if (!sealLayerOn || !current || !current.pages[pageIdx] || !current.pages[pageIdx].seals) return;
-  var p = current.pages[pageIdx];
-  var r = annotWrapEl.getBoundingClientRect();
-  var w = p.width || r.width, h = p.height || r.height;
-  p.seals.forEach(function (s) {
-    var b = s.box;
-    var sx0 = Math.max(0, Math.min(1, b[0] / w)), sy0 = Math.max(0, Math.min(1, b[1] / h));
-    var sx1 = Math.max(sx0, Math.min(1, b[2] / w)), sy1 = Math.max(sy0, Math.min(1, b[3] / h));
-    var div = document.createElement("div");
-    div.className = "seal-box";
-    div.style.left = (sx0 * r.width) + "px";
-    div.style.top = (sy0 * r.height) + "px";
-    div.style.width = ((sx1 - sx0) * r.width) + "px";
-    div.style.height = ((sy1 - sy0) * r.height) + "px";
-    var lab = document.createElement("span");
-    lab.className = "seal-label";
-    lab.textContent = "印章";
-    div.appendChild(lab);
-    annotWrapEl.appendChild(div);
-  });
-}
-// 图文对照：点击预览图 → 定位右侧文字（选中 + 黄色高亮闪烁）
-function handleLinkLayerClick(e) {
-  if (!current || !annotWrapEl) return;
-  var p = current.pages[pageIdx];
-  if (p.kind === "text") { showToast("该页为电子文字层，无位置坐标"); return; }
-  var r = annotWrapEl.getBoundingClientRect();
-  var nx = (e.clientX - r.left) / r.width;
-  var ny = (e.clientY - r.top) / r.height;
-  var w = p.width || r.width, h = p.height || r.height;
-  var px = nx * w, py = ny * h;
-  var hit = null;
-  (p.paras || []).forEach(function (para) {
-    var bx = para.box || [0, 0, 0, 0];
-    if (!hit && bx[0] <= px && px <= bx[2] && bx[1] <= py && py <= bx[3] && para.text.trim()) hit = para;
-  });
-  if (!hit) { showToast("该位置没有可对应的文字"); return; }
-  var bounds = pageTextBounds();
-  var pos = quill.getText().indexOf(hit.text.trim(), bounds[pageIdx]);
-  if (pos < 0 || pos >= bounds[pageIdx + 1]) { showToast("该段已被编辑，未找到对应文字"); return; }
-  var len = hit.text.trim().length;
-  quill.setSelection(pos, len, "silent");
-  quill.formatText(pos, len, "lowconf", true, "silent");
-  setTimeout(function () {
-    quill.formatText(pos, len, "lowconf", false, "silent");
-  }, 2500);
-  showToast("已定位到右侧文字（第 " + (pageIdx + 1) + " 页）", "ok");
-}
-
-function jumpToPageBox(pageIdx, box, label) {
-  if (!current || pageIdx >= current.pages.length) return;
-  focusData = { page: pageIdx, box: box };
-  gotoPage(pageIdx);
-  drawFocusBox();
-  if (focusTimer) clearTimeout(focusTimer);
-  focusTimer = setTimeout(function () {
-    focusData = null;
-    drawFocusBox();
-  }, 8000);
-  if (label) showToast(label);
-}
-$("editorBox").addEventListener("click", function (e) {
-  var el = e.target && e.target.closest ? e.target.closest(".low-conf") : null;
-  if (el) {
-    var blot = Quill.find(el);
-    if (!blot) return;
-    var off = blot.offset();
-    var txt = quill.getText(off, blot.length()).trim();
-    var bounds = pageTextBounds();
-    var page = -1;
-    for (var i = 0; i < bounds.length - 1; i++) {
-      if (off >= bounds[i] && off < bounds[i + 1]) { page = i; break; }
-    }
-    if (page >= 0 && current.pages[page] && current.pages[page].low_conf) {
-      var lc = null;
-      current.pages[page].low_conf.forEach(function (x) { if (!lc && x.text.trim() === txt) lc = x; });
-      if (lc) jumpToPageBox(page, lc.box, "已定位到第 " + (page + 1) + " 页低置信原文");
-    }
-    return;
-  }
-  if (!linkMode) return;
-  var pEl = e.target && e.target.closest ? e.target.closest(".ql-editor p, .ql-editor h1, .ql-editor h2, .ql-editor h3") : null;
-  if (!pEl) return;
-  var lineBlot = Quill.find(pEl);
-  if (!lineBlot) return;
-  var off2 = lineBlot.offset();
-  var bounds2 = pageTextBounds();
-  var page2 = -1;
-  for (var j = 0; j < bounds2.length - 1; j++) {
-    if (off2 >= bounds2[j] && off2 < bounds2[j + 1]) { page2 = j; break; }
-  }
-  if (page2 < 0) return;
-  var lineText = quill.getText(off2, Math.max(0, lineBlot.length() - 1)).trim();
-  var hit = null;
-  (current.pages[page2].paras || []).forEach(function (para) {
-    if (!hit && para.box && (para.box[2] - para.box[0]) > 0 && (para.text || "").indexOf(lineText.slice(0, 10)) >= 0) hit = para;
-  });
-  if (hit) jumpToPageBox(page2, hit.box, "已定位到第 " + (page2 + 1) + " 页原文");
-  else { gotoPage(page2); showToast("已跳到第 " + (page2 + 1) + " 页（该段无原始坐标）"); }
-});
-var linkMode = false;
-$("btnLink").onclick = function () {
-  if (!current) { showToast("请先导入文件", "err"); return; }
-  linkMode = !linkMode;
-  $("btnLink").classList.toggle("active", linkMode);
-  $("editorBox").classList.toggle("link-mode", linkMode);
-  if (linkLayerEl) linkLayerEl.classList.toggle("hidden", annotMode);
-  showToast(linkMode ? "图文对照已开启：点击预览图上的文字，右侧自动定位" : "图文对照已关闭");
-};
-
 // ---- 页面联动 ----
 function gotoPage(n) {
   if (!current) return;
@@ -1456,7 +1316,7 @@ function renderPage() {
   if (!current) return;
   var p = current.pages[pageIdx];
   $("pageNo").textContent = (pageIdx + 1) + " / " + current.pages.length;
-  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-") + ((p.seals && p.seals.length) ? " · 印章 " + p.seals.length + " 处" : "");
+  $("pageInfo").textContent = "第 " + (pageIdx + 1) + " 页 · 引擎 " + current.engine + " · 置信度 " + (p.conf_avg || "-");
   var wrap = document.createElement("div");
   wrap.className = "img-wrap";
   var img = document.createElement("img");
@@ -1470,13 +1330,8 @@ function renderPage() {
   var layer = document.createElement("div");
   layer.className = "annot-layer" + (annotMode ? "" : " hidden");
   wrap.appendChild(layer);
-  var linkLayer = document.createElement("div");
-  linkLayer.className = "link-layer" + ((linkMode && !annotMode) ? "" : " hidden");
-  wrap.appendChild(linkLayer);
-  linkLayer.onclick = handleLinkLayerClick;
   annotLayerEl = layer;
   annotWrapEl = wrap;
-  linkLayerEl = linkLayer;
   $("imageBox").innerHTML = "";
   $("imageBox").appendChild(wrap);
   initAnnotBoxes();
@@ -1485,12 +1340,10 @@ function renderPage() {
   img.onload = function () {
     applyZoom();
     if (pendingFit) { pendingFit = false; $("btnZoomFit").onclick(); }
-    drawFocusBox();
-    renderSealBoxes();
   };
-  if (img.complete && img.naturalWidth) { applyZoom(); renderAnnotBoxes(); drawFocusBox(); renderSealBoxes(); }
+  if (img.complete && img.naturalWidth) { applyZoom(); renderAnnotBoxes(); }
 }
-var annotLayerEl = null, annotWrapEl = null, linkLayerEl = null;
+var annotLayerEl = null, annotWrapEl = null;
 // ---- 预览页防截图水印：口号 + 时间戳 + 页码，平铺斜纹覆盖整页 ----
 function buildWatermarkSvg(pageNum) {
   var d = new Date();
@@ -1666,8 +1519,6 @@ function applyZoom() {
   }
   $("zoomPct").textContent = Math.round(zoomScale * 100) + "%";
   renderAnnotBoxes();
-  renderSealBoxes();
-  drawFocusBox();
 }
 function setZoom(s) {
   zoomScale = Math.max(0.3, Math.min(4, s));

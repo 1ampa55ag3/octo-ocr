@@ -65,10 +65,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Di
 /* 开关态按钮：反白高亮 */
 .export-bar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .export-bar button.active:hover { background: var(--accent-focus); border-color: var(--accent-focus); }
-/* 图文对照开启时，段落悬停提示 */
-.link-mode .ql-editor p:hover, .link-mode .ql-editor h1:hover, .link-mode .ql-editor h2:hover, .link-mode .ql-editor h3:hover {
-  outline: 1px dashed var(--accent); outline-offset: 2px; cursor: pointer;
-}
 .export-bar button.primary:hover { background: var(--accent-focus); border-color: var(--accent-focus); }
 
 /* ---- 2.2 图标 ---- */
@@ -247,7 +243,6 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 .img-wrap { position: relative; display: inline-block; line-height: 0; }
 .wm-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .annot-layer { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
-.link-layer { position: absolute; inset: 0; cursor: crosshair; z-index: 2; }
 .anno-box { position: absolute; border: 2px dashed var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); pointer-events: none; z-index: 3; }
 .anno-box.fixed { background: color-mix(in srgb, var(--danger) 18%, transparent); }
 .anno-box.deletable { pointer-events: auto; cursor: pointer; }
@@ -284,11 +279,7 @@ aside.collapsed { width:0 !important; min-width:0 !important; max-width:0 !impor
 /* ---- 公式样式 ---- */
 .mdun-formula { font-family: "SF Mono", Menlo, Consolas, monospace; font-style: italic; color: var(--text); display: block; text-align: center; margin: 6px 0; font-size: 14px; }
 /* ---- 拼写错误标记 ---- */
-.low-conf { background: rgba(255, 196, 0, .28); border-radius: 2px; cursor: pointer; }
-.low-conf:hover { background: rgba(255, 196, 0, .45); }
-.focus-box { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); z-index: 4; pointer-events: none; }
-.seal-box { position: absolute; border: 2px dashed var(--danger); border-radius: 50%; background: color-mix(in srgb, var(--danger) 8%, transparent); z-index: 3; pointer-events: none; }
-.seal-label { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--danger); background: var(--panel); padding: 0 4px; border-radius: 4px; white-space: nowrap; }
+.low-conf { background: rgba(255, 196, 0, .28); border-radius: 2px; }
 .spell-err { text-decoration: underline wavy var(--danger); text-underline-offset: 3px; cursor: pointer; }
 .spell-err:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 /* ---- 页面分隔块 ---- */

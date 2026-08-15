@@ -26,7 +26,6 @@ def project_to_dict(project: Project) -> dict:
                 "tables": p.tables,
                 "formulas": p.formulas,
                 "low_conf": getattr(p, "low_conf", []),
-                "seals": getattr(p, "seals", []),
                 "paras": [
                     {"kind": para.kind, "text": para.text, "box": [round(v, 1) for v in para.box]}
                     for para in p.paras
