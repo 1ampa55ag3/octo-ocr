@@ -12,6 +12,7 @@
 ![版本](https://img.shields.io/badge/%E7%89%88%E6%9C%AC-v0.23.2-0066cc)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB)
 ![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-macOS%20%2F%20Windows%20%2F%20Linux-1d1d1f)
+![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6%2B-0066cc)
 ![许可](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF-Apache--2.0-brightgreen)
 ![识别引擎](https://img.shields.io/badge/%E8%AF%86%E5%88%AB%E5%BC%95%E6%93%8E-PP--OCRv5-0066cc)
 
@@ -122,6 +123,13 @@ PYTHONPATH=src .venv/bin/python -m mdun.cli --data-dir . serve
 ```
 
 出现「OctoOCR 工作台已启动」后，浏览器打开 <http://127.0.0.1:8788>。
+
+### 鸿蒙电脑（HarmonyOS 6+）
+
+通过 App Gallery 安装「融合开发引擎」，在 openEuler 环境里运行（NAT 模式装依赖、
+host-only 模式浏览器访问）。详见 [鸿蒙 PC 部署方案](docs/harmony-pc-deploy.md)。
+
+已在 **HAD-W32 MateBook Pro（32GB + 1TB）** 上实测通过。
 
 ## 怎么用
 

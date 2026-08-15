@@ -45,8 +45,24 @@ class Settings:
 
 
 def load_settings(data_dir: str | None = None) -> Settings:
+    """加载设置；data_dir/config.json 可覆盖部分字段（如 num_threads）。
+
+    示例 config.json（限制识别线程数以降低 CPU 占用/风扇噪音）：
+        {"num_threads": 4}
+    """
     s = Settings()
     if data_dir:
         s.data_dir = Path(data_dir).expanduser()
+    cfg = s.data_dir / "config.json"
+    if cfg.exists():
+        try:
+            import json
+
+            d = json.loads(cfg.read_text(encoding="utf-8"))
+            if isinstance(d, dict):
+                if "num_threads" in d:
+                    s.num_threads = max(0, int(d["num_threads"]))
+        except Exception:  # noqa: BLE001 配置损坏时回退默认，不影响启动
+            pass
     s.ensure_dirs()
     return s
