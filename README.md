@@ -149,6 +149,14 @@ Windows 10 64 位或 macOS 13 以上，内存 8GB 以上，硬盘空闲 4GB。�
 
 到仓库页面重新 `Download ZIP`，解压覆盖旧的 `octo-ocr` 文件夹即可（你自己的文件和模型不受影响）。
 
+## 致谢
+
+本软件的识别能力建立在以下开源项目之上，特此致谢：
+
+- **文字识别（PP-OCRv5）**：<https://github.com/PaddlePaddle/PaddleOCR>（百度飞桨，Apache-2.0）
+- **版面分析（PP-DocLayout）**：<https://github.com/PaddlePaddle/PaddleX>（百度飞桨，Apache-2.0）
+- **表格识别（SLANet）**：<https://github.com/PaddlePaddle/PaddleOCR>（百度飞桨，Apache-2.0）
+
 ## 开源与许可
 
 本软件按 Apache-2.0 开源。用到的开源组件与各自许可证，可在软件左下角「开源许可」查看；安全问题见 [SECURITY.md](SECURITY.md)。
