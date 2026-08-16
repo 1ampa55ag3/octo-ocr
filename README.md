@@ -76,7 +76,11 @@ python -m venv .venv
 
 看到「完成。模型已放入 models 目录」即可。
 
-**第 5 步：启动软件**
+**第 5 步：启动软件（两种方式任选）**
+
+最简单：**双击仓库里的 `start.bat`**——首次运行自动装依赖、启动服务、自动打开浏览器；已运行时双击直接打开浏览器。
+
+或手动启动（保持窗口不要关闭）：
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -116,7 +120,11 @@ python3 -m venv .venv
 bash scripts/download_models.sh
 ```
 
-**第 5 步：启动**
+**第 5 步：启动（两种方式任选）**
+
+最简单：**双击仓库里的 `start.command`**——首次运行自动装依赖、启动服务、自动打开浏览器；已运行时双击直接打开浏览器。
+
+或手动启动：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m mdun.cli --data-dir . serve
