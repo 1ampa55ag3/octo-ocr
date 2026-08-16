@@ -8,13 +8,19 @@
 
 ## 总流程
 
+提供两种安装方式：
+
+- **方案一（在线）**：NAT 模式下联网装依赖（§4），适合虚拟机可短暂联网的场景
+- **方案二（完全离线，傻瓜式）**：部署包自带 Python 运行时 + 全部依赖轮子，
+  host-only 断网状态下一条命令装完（§8），**推荐给最终用户**
+
 1. 鸿蒙侧：App Gallery 安装融合开发引擎，启动 openEuler 虚拟机
 2. 准备部署包：源码 + 模型 + 部署脚本，通过「文件共享」送入虚拟机（/mnt/linux_share）
-3. **NAT 模式**完成全部依赖部署（虚拟机需要能访问互联网）
+3. 安装：方案一（NAT 模式联网装）或 方案二（离线包直接装）
 4. 切换到 **host-only（仅主机）模式**，本机浏览器才能访问服务
 
 > 关键结论：NAT 模式下宿主机访问不到虚拟机，仅主机模式虚拟机没有外网——
-> 所以必须「NAT 装依赖、host-only 访问」，两步分开。
+> 在线方案必须「NAT 装依赖、host-only 访问」两步分开；离线方案则全程无需外网。
 
 ---
 
@@ -103,14 +109,47 @@ PYTHONPATH=src .venv/bin/python -m mdun.cli --data-dir . serve --host 0.0.0.0 --
 > 安全提示：--host 0.0.0.0 会监听全部网卡，仅建议在可信内网/仅主机网络使用；
 > OfflineGuard 仍封锁程序的一切出网行为，数据不出本机。
 
-## 6. 日常使用与维护
+## 6. 方案二：完全离线安装（host-only 断网可用，傻瓜式）
+
+部署包额外包含：
+
+- `python-runtime.tar.gz`：自带 Python 3.11 aarch64 运行时（python-build-standalone，含 pip）
+- `wheels/`：全部依赖轮子（cp311 manylinux aarch64，含两个 opencv 变体）
+- `install_offline.sh`：离线一键安装脚本
+
+**准备离线部署包**（在任意可联网的电脑上，一条命令）：
+
+```bash
+python3 scripts/build_offline_package.py ~/offline-package
+# 再把 src/ 拷贝为 ~/offline-package/octo-ocr/src，模型放入 models/，
+# 并放入 scripts/install_offline.sh 与 scripts/requirements-harmony.txt
+```
+
+**虚拟机内安装**（host-only 断网状态下即可，无需 NAT）：
+
+```bash
+bash /mnt/linux_share/install_offline.sh
+```
+
+脚本自动：复制代码与模型到 ~/octo-ocr → 解压自带 Python → `--no-index` 离线安装全部
+轮子（含 numpy2 冲突与 opencv 共享文件的既定修复）→ 模型自检 → 导入验证 → 冒烟识别。
+全程零联网、零 dnf、零 venv。
+
+**启动**（使用自带运行时）：
+
+```bash
+cd ~/octo-ocr
+PYTHONPATH=src python/bin/python3 -m mdun.cli --data-dir . serve --host 0.0.0.0 --port 8788
+```
+
+## 7. 日常使用与维护
 
 - 虚拟机重启后 IP 可能变化：用 ip addr 重新查询
-- 服务启动命令见 §5；所有操作都在 ~/octo-ocr 下进行（勿在共享目录里直接操作）
+- 服务启动命令见 §5/§6；所有操作都在 ~/octo-ocr 下进行（勿在共享目录里直接操作）
 - 更新版本：替换 ~/octo-ocr/src 即可；依赖不变则无需重装
-- 性能基准（可选）：`cd ~/octo-ocr && PYTHONPATH=src .venv/bin/python bench_linux.py 文档.pdf`
+- 性能基准（可选）：`cd ~/octo-ocr && PYTHONPATH=src python/bin/python3 bench_linux.py 文档.pdf`
 
-## 7. 故障排查
+## 8. 故障排查
 
 | 现象 | 处理 |
 |---|---|
