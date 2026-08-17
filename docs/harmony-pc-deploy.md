@@ -109,37 +109,46 @@ PYTHONPATH=src .venv/bin/python -m mdun.cli --data-dir . serve --host 0.0.0.0 --
 > 安全提示：--host 0.0.0.0 会监听全部网卡，仅建议在可信内网/仅主机网络使用；
 > OfflineGuard 仍封锁程序的一切出网行为，数据不出本机。
 
-## 6. 方案二：完全离线安装（host-only 断网可用，傻瓜式）
+## 6. 方案二：完全离线安装（推荐 · 极简三步 · 已实测）
 
-部署包额外包含：
+完整安装包是一个文件夹（约 528MB），包含：
 
-- `python-runtime.tar.gz`：自带 Python 3.11 aarch64 运行时（python-build-standalone，含 pip）
-- `wheels/`：全部依赖轮子（cp311 manylinux aarch64，含两个 opencv 变体）
 - `install_offline.sh`：离线一键安装脚本
+- `python-runtime.tar.gz`：自带 Python 3.11 aarch64 运行时（含 pip）
+- `wheels/`：全部依赖轮子（52 个，cp311 aarch64，含全部已知修复）
+- `octo-ocr/`：代码 + 全部模型（约 287MB）+ 性能基准脚本
+- `样例-扫描版5页.pdf`：冒烟测试文档
+- `requirements-harmony.txt`、`测试指南.md`
 
-**准备离线部署包**（在任意可联网的电脑上，一条命令）：
+**极简三步**：
+
+1. 鸿蒙侧：融合开发引擎「文件共享」选择整个安装包文件夹——
+   实测其内容**直接出现在 Linux 的 /mnt/linux_share/ 根下**（不是子目录）
+2. Linux 终端（host-only 断网状态下即可，无需 NAT）：
+
+   ```bash
+   bash /mnt/linux_share/install_offline.sh
+   ```
+
+   脚本自动：复制代码与模型到 ~/octo-ocr → 解压自带 Python → `--no-index` 离线安装
+   全部轮子（含 numpy2 冲突、opencv 共享文件、antlr4 无轮子等既定修复）→ 模型自检
+   → 导入验证 → 冒烟识别。全程零联网、零 dnf、零 venv。
+
+3. 启动并访问（使用自带运行时）：
+
+   ```bash
+   cd ~/octo-ocr
+   PYTHONPATH=src python/bin/python3 -m mdun.cli --data-dir . serve --host 0.0.0.0 --port 8788
+   ```
+
+   然后 `ip addr` 查虚拟机 IP，鸿蒙浏览器访问 http://<该IP>:8788。
+
+**自行构建完整安装包**（在任意可联网的电脑上）：
 
 ```bash
-python3 scripts/build_offline_package.py ~/offline-package
-# 再把 src/ 拷贝为 ~/offline-package/octo-ocr/src，模型放入 models/，
-# 并放入 scripts/install_offline.sh 与 scripts/requirements-harmony.txt
-```
-
-**虚拟机内安装**（host-only 断网状态下即可，无需 NAT）：
-
-```bash
-bash /mnt/linux_share/install_offline.sh
-```
-
-脚本自动：复制代码与模型到 ~/octo-ocr → 解压自带 Python → `--no-index` 离线安装全部
-轮子（含 numpy2 冲突与 opencv 共享文件的既定修复）→ 模型自检 → 导入验证 → 冒烟识别。
-全程零联网、零 dnf、零 venv。
-
-**启动**（使用自带运行时）：
-
-```bash
-cd ~/octo-ocr
-PYTHONPATH=src python/bin/python3 -m mdun.cli --data-dir . serve --host 0.0.0.0 --port 8788
+python3 scripts/build_offline_package.py ~/离线安装包    # 下载运行时 + 构建轮子池
+# 再把 src/ 拷为 ~/离线安装包/octo-ocr/src、模型放入 models/，
+# 并放入 scripts/install_offline.sh、scripts/requirements-harmony.txt 与样例 PDF
 ```
 
 ## 7. 日常使用与维护
