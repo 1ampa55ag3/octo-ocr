@@ -151,12 +151,29 @@ python3 scripts/build_offline_package.py ~/离线安装包    # 下载运行时 
 # 并放入 scripts/install_offline.sh、scripts/requirements-harmony.txt 与样例 PDF
 ```
 
-## 7. 日常使用与维护
+## 7. 每次启动（安装完成后的日常使用）
 
-- 虚拟机重启后 IP 可能变化：用 ip addr 重新查询
-- 服务启动命令见 §5/§6；所有操作都在 ~/octo-ocr 下进行（勿在共享目录里直接操作）
+之后每次使用只需三步：
+
+1. 打开融合开发引擎，启动虚拟机
+2. Linux 终端执行：
+
+   ```bash
+   cd ~/octo-ocr && bash start.sh
+   ```
+
+3. 脚本会自动：检测服务是否已在运行 → 没有则启动（自带运行时/venv 自动识别）→
+   **自动识别当前虚拟机 IP 并打印访问地址**（虚拟机重启后 IP 变了也不用手动查），
+   在鸿蒙浏览器打开打印的 http://<IP>:8788 即可。
+
+停止：在启动窗口按 Ctrl+C 或直接关闭窗口。
+
+日常维护：
+
 - 更新版本：替换 ~/octo-ocr/src 即可；依赖不变则无需重装
+- 限速降噪（可选）：`echo '{"num_threads": 3}' > ~/octo-ocr/config.json` 后重启服务
 - 性能基准（可选）：`cd ~/octo-ocr && PYTHONPATH=src python/bin/python3 bench_linux.py 文档.pdf`
+- 所有操作都在 ~/octo-ocr 下进行（勿在共享目录里直接操作）
 
 ## 8. 故障排查
 

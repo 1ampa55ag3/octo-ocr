@@ -19,6 +19,7 @@ echo "== 1. 复制代码到主目录（约 290MB，几十秒）=="
 rm -rf "$HOME_APP"
 cp -r "$SRC" "$HOME_APP" || { echo "!! 复制失败，把报错发我"; exit 1; }
 cp "$HERE"/*.pdf "$HOME_APP/" 2>/dev/null || true
+cp "$HERE/start.sh" "$HOME_APP/" 2>/dev/null || true   # 日常启动脚本
 cd "$HOME_APP"
 
 # ---- 网络自检（NAT 模式）----
